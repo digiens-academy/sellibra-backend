@@ -1,0 +1,291 @@
+const { getSheetsClient } = require('../config/googleSheets');
+const { formatDateForSheets } = require('../utils/helpers');
+const { prisma } = require('../config/database');
+const config = require('../config/env');
+const logger = require('../utils/logger');
+
+class GoogleSheetsService {
+  constructor() {
+    this.spreadsheetId = config.googleSheetsId;
+    this.sheetName = null; // Will be auto-detected
+  }
+
+  // Auto-detect sheet name (first sheet in the spreadsheet)
+  async getSheetName() {
+    if (this.sheetName) return this.sheetName;
+
+    const sheets = getSheetsClient();
+    if (!sheets) return 'Sheet1'; // fallback
+
+    try {
+      const response = await sheets.spreadsheets.get({
+        spreadsheetId: this.spreadsheetId,
+      });
+      
+      // Get first sheet name
+      const firstSheet = response.data.sheets[0];
+      this.sheetName = firstSheet.properties.title;
+      logger.info(`📋 Detected Google Sheet name: "${this.sheetName}"`);
+      return this.sheetName;
+    } catch (error) {
+      logger.error('Error detecting sheet name:', error.message);
+      this.sheetName = 'Sheet1'; // fallback to default
+      return this.sheetName;
+    }
+  }
+
+  // Append user to Google Sheets (OTOMATIK - REGISTER SONRASI)
+  async appendUserToSheet(userData) {
+    const sheets = getSheetsClient();
+    
+    if (!sheets) {
+      logger.warn('⚠️ Google Sheets not initialized, skipping sync for user:', userData.email);
+      logger.warn('💡 To enable Google Sheets sync:');
+      logger.warn('   1. Create Google Cloud project');
+      logger.warn('   2. Enable Google Sheets API');
+      logger.warn('   3. Create Service Account & download JSON');
+      logger.warn('   4. Save as config/google-credentials.json');
+      logger.warn('   5. Share sheet with service account email');
+      return { success: false, message: 'Google Sheets not configured' };
+    }
+
+    try {
+      const sheetName = await this.getSheetName();
+      
+      const row = [
+        userData.firstName || '',
+        userData.lastName || '',
+        userData.email || '',
+        userData.etsyStoreUrl || '-',
+        formatDateForSheets(userData.registeredAt || new Date()),
+        'HAYIR', // Default: PrintNest Kayıt Olmuş = HAYIR
+      ];
+
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: this.spreadsheetId,
+        range: `${sheetName}!A:F`,
+        valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
+        resource: {
+          values: [row],
+        },
+      });
+
+      // Log sync
+      await this.logSync(userData.id, 'user_registration', 'success');
+
+      logger.info(`✅ User ${userData.email} automatically added to Google Sheets`);
+      return { success: true, message: 'User synced to Google Sheets' };
+    } catch (error) {
+      logger.error('❌ Error appending to Google Sheets:', error.message);
+      
+      // Log failed sync
+      await this.logSync(userData.id, 'user_registration', 'failed', error.message);
+      
+      return { success: false, message: error.message };
+    }
+  }
+
+  // Update user in Google Sheets
+  async updateUserInSheet(email, updates) {
+    const sheets = getSheetsClient();
+    
+    if (!sheets) {
+      logger.warn('Google Sheets not initialized, skipping update');
+      return { success: false, message: 'Google Sheets not configured' };
+    }
+
+    try {
+      const sheetName = await this.getSheetName();
+      
+      // Find row by email
+      const rowIndex = await this.findUserRowByEmail(email);
+
+      if (!rowIndex) {
+        logger.warn(`User ${email} not found in Google Sheets`);
+        return { success: false, message: 'User not found in sheet' };
+      }
+
+      // Prepare updates
+      const updateRequests = [];
+
+      // Update firstName (Column A)
+      if (updates.firstName) {
+        updateRequests.push({
+          range: `${sheetName}!A${rowIndex}`,
+          values: [[updates.firstName]],
+        });
+      }
+
+      // Update lastName (Column B)
+      if (updates.lastName) {
+        updateRequests.push({
+          range: `${sheetName}!B${rowIndex}`,
+          values: [[updates.lastName]],
+        });
+      }
+
+      // Update etsyStoreUrl (Column D)
+      if (updates.etsyStoreUrl !== undefined) {
+        updateRequests.push({
+          range: `${sheetName}!D${rowIndex}`,
+          values: [[updates.etsyStoreUrl || '-']],
+        });
+      }
+
+      // Update printNestConfirmed (Column F)
+      if (updates.printNestConfirmed !== undefined) {
+        updateRequests.push({
+          range: `${sheetName}!F${rowIndex}`,
+          values: [[updates.printNestConfirmed ? 'EVET' : 'HAYIR']],
+        });
+      }
+
+      // Execute batch update
+      if (updateRequests.length > 0) {
+        await sheets.spreadsheets.values.batchUpdate({
+          spreadsheetId: this.spreadsheetId,
+          resource: {
+            valueInputOption: 'RAW',
+            data: updateRequests,
+          },
+        });
+      }
+
+      logger.info(`User ${email} updated in Google Sheets`);
+      return { success: true, message: 'User updated in Google Sheets' };
+    } catch (error) {
+      logger.error('Error updating Google Sheets:', error.message);
+      return { success: false, message: error.message };
+    }
+  }
+
+  // Find user row by email
+  async findUserRowByEmail(email) {
+    const sheets = getSheetsClient();
+    
+    if (!sheets) {
+      return null;
+    }
+
+    try {
+      const sheetName = await this.getSheetName();
+      
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: `${sheetName}!C:C`, // Email column
+      });
+
+      const rows = response.data.values;
+      if (!rows || rows.length === 0) {
+        return null;
+      }
+
+      // Find row index (skip header row)
+      for (let i = 1; i < rows.length; i++) {
+        if (rows[i][0] === email) {
+          return i + 1; // +1 because sheets are 1-indexed
+        }
+      }
+
+      return null;
+    } catch (error) {
+      logger.error('Error finding user in Google Sheets:', error.message);
+      return null;
+    }
+  }
+
+  // Mark user as PrintNest confirmed
+  async markUserAsPrintNestConfirmed(email, userId) {
+    try {
+      const result = await this.updateUserInSheet(email, { printNestConfirmed: true });
+      
+      if (result.success) {
+        // Log sync
+        await this.logSync(userId, 'printnest_confirmation', 'success');
+      } else {
+        await this.logSync(userId, 'printnest_confirmation', 'failed', result.message);
+      }
+
+      return result;
+    } catch (error) {
+      logger.error('Error marking user as confirmed:', error.message);
+      await this.logSync(userId, 'printnest_confirmation', 'failed', error.message);
+      return { success: false, message: error.message };
+    }
+  }
+
+  // Manual sync all users
+  async syncAllUsers() {
+    const sheets = getSheetsClient();
+    
+    if (!sheets) {
+      logger.warn('Google Sheets not initialized, skipping sync');
+      return { success: false, message: 'Google Sheets not configured' };
+    }
+
+    try {
+      const sheetName = await this.getSheetName();
+      
+      // Get all users from database
+      const users = await prisma.user.findMany({
+        orderBy: { registeredAt: 'asc' },
+      });
+
+      // Clear existing data (keep header)
+      await sheets.spreadsheets.values.clear({
+        spreadsheetId: this.spreadsheetId,
+        range: `${sheetName}!A2:F`,
+      });
+
+      // Prepare rows
+      const rows = users.map((user) => [
+        user.firstName,
+        user.lastName,
+        user.email,
+        user.etsyStoreUrl || '-',
+        formatDateForSheets(user.registeredAt),
+        user.printNestConfirmed ? 'EVET' : 'HAYIR',
+      ]);
+
+      // Append all users
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: this.spreadsheetId,
+        range: `${sheetName}!A2:F`,
+        valueInputOption: 'RAW',
+        resource: {
+          values: rows,
+        },
+      });
+
+      // Log sync
+      await this.logSync(null, 'manual_sync', 'success', null);
+
+      logger.info(`Synced ${users.length} users to Google Sheets`);
+      return { success: true, message: `${users.length} kullanıcı senkronize edildi` };
+    } catch (error) {
+      logger.error('Error syncing all users:', error.message);
+      await this.logSync(null, 'manual_sync', 'failed', error.message);
+      return { success: false, message: error.message };
+    }
+  }
+
+  // Log sync to database
+  async logSync(userId, syncType, status, errorMessage = null) {
+    try {
+      await prisma.googleSheetsSyncLog.create({
+        data: {
+          userId,
+          syncType,
+          status,
+          errorMessage,
+        },
+      });
+    } catch (error) {
+      logger.error('Error logging sync:', error.message);
+    }
+  }
+}
+
+module.exports = new GoogleSheetsService();
+

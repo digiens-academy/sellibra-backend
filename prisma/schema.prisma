@@ -1,0 +1,77 @@
+// Prisma Schema for Digiens PrintNest Tracking
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Users table
+model User {
+  id                  Int      @id @default(autoincrement())
+  firstName           String   @map("first_name")
+  lastName            String   @map("last_name")
+  email               String   @unique
+  password            String
+  phoneNumber         String?  @map("phone_number")
+  etsyStoreUrl        String?  @map("etsy_store_url")
+  role                    String   @default("user") // "user" or "admin"
+  hasActiveSubscription   Boolean  @default(false) @map("has_active_subscription")
+  subscriptionCheckedAt   DateTime? @map("subscription_checked_at")
+  registeredAt            DateTime @default(now()) @map("registered_at")
+  printNestConfirmed      Boolean  @default(false) @map("printnest_confirmed")
+  dailyTokens             Int      @default(40) @map("daily_tokens")
+  lastTokenReset          DateTime @default(now()) @map("last_token_reset")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  printNestSessions   PrintNestSession[]
+  googleSheetsSyncLog GoogleSheetsSyncLog[]
+
+  @@map("users")
+}
+
+// PrintNest Sessions table
+model PrintNestSession {
+  id                 Int       @id @default(autoincrement())
+  userId             Int       @map("user_id")
+  sessionId          String    @unique @map("session_id")
+  iframeOpenedAt     DateTime  @default(now()) @map("iframe_opened_at")
+  iframeClosedAt     DateTime? @map("iframe_closed_at")
+  totalTimeSpent     Int?      @map("total_time_spent") // in seconds
+  userIp             String?   @map("user_ip")
+  userAgent          String?   @map("user_agent") @db.Text
+  referrerPage       String?   @map("referrer_page")
+  interactionsCount  Int       @default(0) @map("interactions_count")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([iframeOpenedAt])
+  @@map("printnest_sessions")
+}
+
+// Google Sheets Sync Log
+model GoogleSheetsSyncLog {
+  id            Int      @id @default(autoincrement())
+  userId        Int?     @map("user_id")
+  syncType      String   @map("sync_type") // "user_registration", "printnest_confirmation", "manual_sync"
+  status        String   // "success" or "failed"
+  errorMessage  String?  @map("error_message") @db.Text
+  syncedAt      DateTime @default(now()) @map("synced_at")
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([syncedAt])
+  @@map("google_sheets_sync_log")
+}
+
