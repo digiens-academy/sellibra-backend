@@ -33,11 +33,20 @@ if (config.nodeEnv === 'development') {
   app.use(morgan('combined'));
 }
 
-// Health check endpoint
+// Health check endpoints
 app.get('/health', (req, res) => {
   res.status(200).json({
     success: true,
     message: 'Server is running',
+    environment: config.nodeEnv,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'API is running',
     environment: config.nodeEnv,
     timestamp: new Date().toISOString(),
   });
