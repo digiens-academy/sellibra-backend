@@ -1,6 +1,5 @@
 # Multi-stage build for production
-FROM node:22-alpine AS builder
-
+FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 
 # Copy package files
@@ -17,7 +16,7 @@ RUN npx prisma generate
 COPY . .
 
 # Production stage
-FROM node:22-alpine
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 
