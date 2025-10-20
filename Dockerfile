@@ -17,6 +17,7 @@ RUN apt-get update \
 # (2) Prisma Client üret (Debian/glibc hedefi)
 RUN npx prisma generate --schema=./prisma/schema.prisma --platform=linux-x64 || true
 
+
 # (3) Uygulama kodunu kopyala
 COPY . .
 
@@ -53,4 +54,5 @@ EXPOSE 5000
 #   CMD node -e "require('http').get('http://localhost:5000/health', r => process.exit(r.statusCode===200?0:1))"
 
 ENTRYPOINT ["dumb-init","--"]
+RUN npx prisma db push
 CMD ["node","src/server.js"]
