@@ -19,6 +19,7 @@ model User {
   phoneNumber         String?  @map("phone_number")
   etsyStoreUrl        String?  @map("etsy_store_url")
   role                    String   @default("user") // "user" or "admin"
+  isSuperAdmin            Boolean  @default(false) @map("is_super_admin") // Super admin cannot be deleted
   hasActiveSubscription   Boolean  @default(false) @map("has_active_subscription")
   subscriptionCheckedAt   DateTime? @map("subscription_checked_at")
   registeredAt            DateTime @default(now()) @map("registered_at")
