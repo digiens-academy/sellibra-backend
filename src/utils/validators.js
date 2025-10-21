@@ -50,9 +50,8 @@ const validators = {
       .isLength({ min: 6 })
       .withMessage('Şifre en az 6 karakter olmalıdır'),
     body('etsyStoreUrl')
+      .optional({ checkFalsy: true })
       .trim()
-      .notEmpty()
-      .withMessage('Etsy mağaza URL\'si zorunludur')
       .custom((value) => {
         // Basit Etsy URL/shop name formatını kontrol et
         const etsyPattern = /etsy\.com\/shop\/[a-zA-Z0-9_-]+/i;

@@ -488,6 +488,76 @@ class AIController {
       next(error);
     }
   }
+
+  /**
+   * @route   GET /api/ai/download-image
+   * @desc    Proxy endpoint for downloading AI-generated images (CORS workaround)
+   * @access  Private
+   */
+  async downloadImage(req, res, next) {
+    try {
+      const { url } = req.query;
+
+      if (!url) {
+        return errorResponse(res, 'Görsel URL\'si gereklidir', 400);
+      }
+
+      // URL'nin güvenli olduğunu kontrol et (sadece belirli domainlerden)
+      const allowedDomains = [
+        'oaidalleapiprodscus.blob.core.windows.net',
+        'dalleprodsec.blob.core.windows.net',
+        'oaidalleapiprodscus.blob.core.chinacloudapi.cn'
+      ];
+
+      const urlObject = new URL(url);
+      const isAllowed = allowedDomains.some(domain => urlObject.hostname.includes(domain));
+
+      if (!isAllowed) {
+        return errorResponse(res, 'Geçersiz görsel URL\'si', 400);
+      }
+
+      logger.info(`Görsel indirme isteği: ${url.substring(0, 50)}...`);
+
+      // Görseli indir
+      const axios = require('axios');
+      const response = await axios.get(url, {
+        responseType: 'arraybuffer',
+        timeout: 30000
+      });
+
+      // Content-Type'ı belirle
+      const contentType = response.headers['content-type'] || 'image/png';
+      
+      // Dosya uzantısını belirle
+      let extension = 'png';
+      if (contentType.includes('jpeg') || contentType.includes('jpg')) {
+        extension = 'jpg';
+      } else if (contentType.includes('webp')) {
+        extension = 'webp';
+      }
+
+      // Download header'ları ayarla
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="ai-image-${Date.now()}.${extension}"`);
+      res.setHeader('Content-Length', response.data.length);
+
+      // Görseli gönder
+      res.send(response.data);
+
+    } catch (error) {
+      logger.error('Download image error:', error);
+      
+      if (error.code === 'ECONNABORTED') {
+        return errorResponse(res, 'Görsel indirme zaman aşımına uğradı', 408);
+      }
+
+      if (error.response?.status === 404) {
+        return errorResponse(res, 'Görsel bulunamadı veya süresi dolmuş', 404);
+      }
+
+      return errorResponse(res, 'Görsel indirilirken bir hata oluştu', 500);
+    }
+  }
 }
 
 module.exports = new AIController();

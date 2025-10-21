@@ -27,5 +27,8 @@ router.post('/generate-etsy-description', protect, premiumOnly, aiController.gen
 // Generate Mockup
 router.post('/generate-mockup', protect, premiumOnly, upload.single('design'), aiController.generateMockup);
 
+// Download Image (CORS workaround)
+router.get('/download-image', protect, aiController.downloadImage);
+
 module.exports = router;
 
