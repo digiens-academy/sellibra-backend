@@ -11,6 +11,9 @@ router.use(protect, adminOnly);
 router.get('/users', adminController.getUsers);
 router.get('/users/:id', validators.userId, adminController.getUserById);
 router.put('/users/:id/confirm-printnest', validators.userId, adminController.confirmPrintNest);
+router.put('/users/:id/role', validators.userId, adminController.updateUserRole);
+router.put('/users/:id/tokens', validators.userId, adminController.updateUserTokens);
+router.post('/users/:id/reset-tokens', validators.userId, adminController.resetUserTokens);
 router.delete('/users/:id', validators.userId, adminController.deleteUser);
 
 // PrintNest sessions

@@ -106,6 +106,19 @@ class AdminService {
   // Delete user
   async deleteUser(userId) {
     try {
+      // Check if user is super admin
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        throw new Error('Kullanıcı bulunamadı');
+      }
+
+      if (user.isSuperAdmin) {
+        throw new Error('Super admin kullanıcısı silinemez');
+      }
+
       await prisma.user.delete({
         where: { id: userId },
       });
@@ -114,6 +127,60 @@ class AdminService {
       return { success: true };
     } catch (error) {
       logger.error('Delete user error:', error);
+      throw error;
+    }
+  }
+
+  // Update user role
+  async updateUserRole(userId, role) {
+    try {
+      const user = await prisma.user.update({
+        where: { id: userId },
+        data: { role },
+      });
+
+      logger.info(`User ${userId} role updated to ${role}`);
+      return formatUser(user);
+    } catch (error) {
+      logger.error('Update user role error:', error);
+      throw error;
+    }
+  }
+
+  // Update user tokens
+  async updateUserTokens(userId, dailyTokens) {
+    try {
+      const user = await prisma.user.update({
+        where: { id: userId },
+        data: { 
+          dailyTokens,
+          lastTokenReset: new Date(),
+        },
+      });
+
+      logger.info(`User ${userId} tokens updated to ${dailyTokens}`);
+      return formatUser(user);
+    } catch (error) {
+      logger.error('Update user tokens error:', error);
+      throw error;
+    }
+  }
+
+  // Reset user tokens to default
+  async resetUserTokens(userId) {
+    try {
+      const user = await prisma.user.update({
+        where: { id: userId },
+        data: { 
+          dailyTokens: 40, // Default token amount
+          lastTokenReset: new Date(),
+        },
+      });
+
+      logger.info(`User ${userId} tokens reset to default (40)`);
+      return formatUser(user);
+    } catch (error) {
+      logger.error('Reset user tokens error:', error);
       throw error;
     }
   }

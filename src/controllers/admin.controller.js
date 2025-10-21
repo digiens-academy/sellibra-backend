@@ -67,6 +67,67 @@ class AdminController {
 
       return successResponse(res, null, 'Kullanıcı silindi');
     } catch (error) {
+      if (error.message === 'Super admin kullanıcısı silinemez') {
+        return errorResponse(res, error.message, 403);
+      }
+      if (error.message === 'Kullanıcı bulunamadı') {
+        return errorResponse(res, error.message, 404);
+      }
+      next(error);
+    }
+  }
+
+  // @route   PUT /api/admin/users/:id/role
+  // @desc    Update user role
+  // @access  Private (Admin only)
+  async updateUserRole(req, res, next) {
+    try {
+      const userId = parseInt(req.params.id);
+      const { role } = req.body;
+
+      if (!role || !['user', 'admin'].includes(role)) {
+        return errorResponse(res, 'Geçersiz rol. Sadece "user" veya "admin" olabilir', 400);
+      }
+
+      const user = await adminService.updateUserRole(userId, role);
+
+      return successResponse(res, { user }, 'Kullanıcı rolü güncellendi');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // @route   PUT /api/admin/users/:id/tokens
+  // @desc    Update user tokens
+  // @access  Private (Admin only)
+  async updateUserTokens(req, res, next) {
+    try {
+      const userId = parseInt(req.params.id);
+      const { dailyTokens } = req.body;
+
+      if (dailyTokens === undefined || dailyTokens < 0) {
+        return errorResponse(res, 'Geçersiz token miktarı', 400);
+      }
+
+      const user = await adminService.updateUserTokens(userId, parseInt(dailyTokens));
+
+      return successResponse(res, { user }, 'Kullanıcı tokenleri güncellendi');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // @route   POST /api/admin/users/:id/reset-tokens
+  // @desc    Reset user tokens to default
+  // @access  Private (Admin only)
+  async resetUserTokens(req, res, next) {
+    try {
+      const userId = parseInt(req.params.id);
+
+      const user = await adminService.resetUserTokens(userId);
+
+      return successResponse(res, { user }, 'Kullanıcı tokenleri sıfırlandı');
+    } catch (error) {
       next(error);
     }
   }

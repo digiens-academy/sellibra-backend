@@ -5,6 +5,7 @@ const morgan = require('morgan');
 const config = require('./config/env');
 const { connectDB } = require('./config/database');
 const { initializeGoogleSheets } = require('./config/googleSheets');
+const { initializeSuperAdmin } = require('./utils/initAdmin');
 const { errorHandler, notFound } = require('./middlewares/errorHandler.middleware');
 const logger = require('./utils/logger');
 
@@ -16,6 +17,15 @@ connectDB();
 
 // Initialize Google Sheets
 initializeGoogleSheets();
+
+// Initialize Super Admin (async)
+(async () => {
+  try {
+    await initializeSuperAdmin();
+  } catch (error) {
+    logger.error('Failed to initialize super admin:', error);
+  }
+})();
 
 // Middleware
 app.use(helmet()); // Security headers
