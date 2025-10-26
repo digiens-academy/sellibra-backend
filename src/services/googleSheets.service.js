@@ -285,6 +285,90 @@ class GoogleSheetsService {
       logger.error('Error logging sync:', error.message);
     }
   }
+
+  // Process sheet update from webhook (SHEETS -> DATABASE)
+  async processSheetUpdate(rowData) {
+    try {
+      logger.info('📥 Processing sheet update:', rowData);
+
+      // Parse row data
+      const {
+        email,
+        firstName,
+        lastName,
+        etsyStoreUrl,
+        printNestConfirmed,
+      } = rowData;
+
+      // Validate required fields
+      if (!email) {
+        logger.error('❌ Email is required for sheet update');
+        return { success: false, message: 'Email is required' };
+      }
+
+      // Find user by email
+      const user = await prisma.user.findUnique({
+        where: { email },
+      });
+
+      if (!user) {
+        logger.error(`❌ User not found: ${email}`);
+        return { success: false, message: `Kullanıcı bulunamadı: ${email}` };
+      }
+
+      // Prepare update data
+      const updateData = {};
+
+      if (firstName !== undefined && firstName !== user.firstName) {
+        updateData.firstName = firstName;
+      }
+
+      if (lastName !== undefined && lastName !== user.lastName) {
+        updateData.lastName = lastName;
+      }
+
+      if (etsyStoreUrl !== undefined) {
+        // Handle "-" as null/empty
+        const normalizedUrl = etsyStoreUrl === '-' ? null : etsyStoreUrl;
+        if (normalizedUrl !== user.etsyStoreUrl) {
+          updateData.etsyStoreUrl = normalizedUrl;
+        }
+      }
+
+      if (printNestConfirmed !== undefined) {
+        // Convert "EVET"/"HAYIR" to boolean
+        const isConfirmed = printNestConfirmed === 'EVET' || printNestConfirmed === true;
+        if (isConfirmed !== user.printNestConfirmed) {
+          updateData.printNestConfirmed = isConfirmed;
+        }
+      }
+
+      // If no changes, skip update
+      if (Object.keys(updateData).length === 0) {
+        logger.info(`ℹ️ No changes detected for user: ${email}`);
+        return { success: true, message: 'Değişiklik yok' };
+      }
+
+      // Update user in database
+      await prisma.user.update({
+        where: { email },
+        data: updateData,
+      });
+
+      // Log sync
+      await this.logSync(user.id, 'sheet_to_db_sync', 'success');
+
+      logger.info(`✅ User ${email} updated from Google Sheets:`, updateData);
+      return { 
+        success: true, 
+        message: 'Kullanıcı güncellendi', 
+        updatedFields: Object.keys(updateData) 
+      };
+    } catch (error) {
+      logger.error('❌ Error processing sheet update:', error.message);
+      return { success: false, message: error.message };
+    }
+  }
 }
 
 module.exports = new GoogleSheetsService();

@@ -9,6 +9,11 @@ class UserService {
     try {
       const user = await prisma.user.findUnique({
         where: { id: userId },
+        include: {
+          etsyStores: {
+            orderBy: { createdAt: 'asc' },
+          },
+        },
       });
 
       if (!user) {

@@ -4,7 +4,11 @@ const adminController = require('../controllers/admin.controller');
 const { protect, adminOnly } = require('../middlewares/auth.middleware');
 const validators = require('../utils/validators');
 
-// All routes are protected and admin only
+// Public webhook endpoint (protected with secret token in controller)
+// This must be BEFORE the middleware below
+router.post('/sheets-webhook', adminController.handleSheetsWebhook);
+
+// All routes below are protected and admin only
 router.use(protect, adminOnly);
 
 // User management
