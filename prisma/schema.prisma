@@ -32,6 +32,7 @@ model User {
   // Relations
   printNestSessions   PrintNestSession[]
   googleSheetsSyncLog GoogleSheetsSyncLog[]
+  etsyStores          EtsyStore[]
 
   @@map("users")
 }
@@ -74,5 +75,21 @@ model GoogleSheetsSyncLog {
   @@index([userId])
   @@index([syncedAt])
   @@map("google_sheets_sync_log")
+}
+
+// Etsy Stores table
+model EtsyStore {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  storeUrl    String   @map("store_url") @db.Text
+  storeName   String?  @map("store_name")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("etsy_stores")
 }
 

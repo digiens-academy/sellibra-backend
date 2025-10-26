@@ -195,6 +195,36 @@ class AdminController {
       next(error);
     }
   }
+
+  // @route   POST /api/admin/sheets-webhook
+  // @desc    Handle Google Sheets updates (webhook from Apps Script)
+  // @access  Public (but protected with secret token)
+  async handleSheetsWebhook(req, res, next) {
+    try {
+      const config = require('../config/env');
+      
+      // Validate webhook secret
+      const providedSecret = req.headers['x-webhook-secret'];
+      
+      if (config.sheetsWebhookSecret && providedSecret !== config.sheetsWebhookSecret) {
+        return errorResponse(res, 'Invalid webhook secret', 401);
+      }
+
+      // Get row data from request body
+      const rowData = req.body;
+
+      // Process the update
+      const result = await googleSheetsService.processSheetUpdate(rowData);
+
+      if (result.success) {
+        return successResponse(res, result, result.message);
+      } else {
+        return errorResponse(res, result.message, 400);
+      }
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new AdminController();
