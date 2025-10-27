@@ -26,6 +26,8 @@ model User {
   printNestConfirmed      Boolean  @default(false) @map("printnest_confirmed")
   dailyTokens             Int      @default(40) @map("daily_tokens")
   lastTokenReset          DateTime @default(now()) @map("last_token_reset")
+  resetToken              String?  @map("reset_token")
+  resetTokenExpiry        DateTime? @map("reset_token_expiry")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 

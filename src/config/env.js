@@ -22,6 +22,9 @@ const config = {
 
   // PrintNest
   printNestUrl: process.env.PRINTNEST_URL || 'https://printnest.com',
+
+  // Resend (Email)
+  resendApiKey: process.env.RESEND_API_KEY,
 };
 
 // Validate required environment variables

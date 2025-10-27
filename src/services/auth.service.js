@@ -1,9 +1,11 @@
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const { prisma } = require('../config/database');
 const { generateToken, formatUser } = require('../utils/helpers');
 const googleSheetsService = require('./googleSheets.service');
 const etsyService = require('./etsy.service');
 const subscriptionService = require('./subscription.service');
+const emailService = require('./email.service');
 const logger = require('../utils/logger');
 
 class AuthService {
@@ -164,6 +166,126 @@ class AuthService {
       return formatUser(user);
     } catch (error) {
       logger.error('Get current user error:', error);
+      throw error;
+    }
+  }
+
+  // Request password reset
+  async requestPasswordReset(email) {
+    try {
+      // Find user by email
+      const user = await prisma.user.findUnique({
+        where: { email },
+      });
+
+      // For security reasons, don't reveal if email exists or not
+      if (!user) {
+        logger.info(`Password reset requested for non-existent email: ${email}`);
+        // Still return success to prevent email enumeration
+        return { message: 'Eğer bu e-posta kayıtlıysa, şifre sıfırlama linki gönderildi' };
+      }
+
+      // Generate reset token (32 bytes = 64 hex characters)
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      
+      // Token expires in 1 hour
+      const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000);
+
+      // Save token to database
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          resetToken,
+          resetTokenExpiry,
+        },
+      });
+
+      // Send password reset email
+      try {
+        await emailService.sendPasswordResetEmail(
+          user.email,
+          resetToken,
+          user.firstName
+        );
+        logger.info(`Password reset email sent to ${user.email}`);
+      } catch (emailError) {
+        logger.error('Failed to send password reset email:', emailError);
+        // Clear the token if email fails
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            resetToken: null,
+            resetTokenExpiry: null,
+          },
+        });
+        throw new Error('E-posta gönderilemedi. Lütfen daha sonra tekrar deneyin.');
+      }
+
+      return { message: 'Eğer bu e-posta kayıtlıysa, şifre sıfırlama linki gönderildi' };
+    } catch (error) {
+      logger.error('Request password reset error:', error);
+      throw error;
+    }
+  }
+
+  // Verify reset token
+  async verifyResetToken(token) {
+    try {
+      const user = await prisma.user.findFirst({
+        where: {
+          resetToken: token,
+          resetTokenExpiry: {
+            gte: new Date(), // Token must not be expired
+          },
+        },
+      });
+
+      if (!user) {
+        throw new Error('Geçersiz veya süresi dolmuş token');
+      }
+
+      return { valid: true, email: user.email };
+    } catch (error) {
+      logger.error('Verify reset token error:', error);
+      throw error;
+    }
+  }
+
+  // Reset password
+  async resetPassword(token, newPassword) {
+    try {
+      // Find user with valid token
+      const user = await prisma.user.findFirst({
+        where: {
+          resetToken: token,
+          resetTokenExpiry: {
+            gte: new Date(), // Token must not be expired
+          },
+        },
+      });
+
+      if (!user) {
+        throw new Error('Geçersiz veya süresi dolmuş token');
+      }
+
+      // Hash new password
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+      // Update password and clear reset token
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          password: hashedPassword,
+          resetToken: null,
+          resetTokenExpiry: null,
+        },
+      });
+
+      logger.info(`Password reset successful for user: ${user.email}`);
+
+      return { message: 'Şifreniz başarıyla sıfırlandı' };
+    } catch (error) {
+      logger.error('Reset password error:', error);
       throw error;
     }
   }
