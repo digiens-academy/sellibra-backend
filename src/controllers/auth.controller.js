@@ -79,6 +79,72 @@ class AuthController {
     // Client should remove token from storage
     return successResponse(res, null, 'Çıkış başarılı');
   }
+
+  // @route   POST /api/auth/forgot-password
+  // @desc    Request password reset
+  // @access  Public
+  async forgotPassword(req, res, next) {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        return errorResponse(res, 'E-posta adresi gereklidir', 400);
+      }
+
+      const result = await authService.requestPasswordReset(email);
+
+      return successResponse(res, result, result.message);
+    } catch (error) {
+      if (error.message.includes('E-posta gönderilemedi')) {
+        return errorResponse(res, error.message, 500);
+      }
+      next(error);
+    }
+  }
+
+  // @route   GET /api/auth/verify-reset-token/:token
+  // @desc    Verify password reset token
+  // @access  Public
+  async verifyResetToken(req, res, next) {
+    try {
+      const { token } = req.params;
+
+      const result = await authService.verifyResetToken(token);
+
+      return successResponse(res, result, 'Token geçerli');
+    } catch (error) {
+      if (error.message.includes('Geçersiz veya süresi dolmuş token')) {
+        return errorResponse(res, error.message, 400);
+      }
+      next(error);
+    }
+  }
+
+  // @route   POST /api/auth/reset-password
+  // @desc    Reset password with token
+  // @access  Public
+  async resetPassword(req, res, next) {
+    try {
+      const { token, newPassword } = req.body;
+
+      if (!token || !newPassword) {
+        return errorResponse(res, 'Token ve yeni şifre gereklidir', 400);
+      }
+
+      if (newPassword.length < 6) {
+        return errorResponse(res, 'Şifre en az 6 karakter olmalıdır', 400);
+      }
+
+      const result = await authService.resetPassword(token, newPassword);
+
+      return successResponse(res, result, result.message);
+    } catch (error) {
+      if (error.message.includes('Geçersiz veya süresi dolmuş token')) {
+        return errorResponse(res, error.message, 400);
+      }
+      next(error);
+    }
+  }
 }
 
 module.exports = new AuthController();
