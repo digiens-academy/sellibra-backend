@@ -16,10 +16,10 @@ const initializeGoogleSheets = async () => {
       logger.warn('Google Sheets sync will be disabled');
       return null;
     }
-
+console.log('credentialsPath', credentialsPath);
     // Read credentials
     const credentials = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
-
+console.log('credentials', credentials);
     // Create auth client
     const auth = new google.auth.GoogleAuth({
       credentials,
