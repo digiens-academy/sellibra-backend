@@ -28,6 +28,7 @@ router.get('/stats', adminController.getStats);
 
 // Google Sheets sync
 router.post('/sync-to-sheets', adminController.syncToSheets);
+router.post('/import-from-sheets', adminController.importFromSheets);
 router.get('/sync-logs', adminController.getSyncLogs);
 
 module.exports = router;

@@ -15,7 +15,7 @@ model User {
   firstName           String   @map("first_name")
   lastName            String   @map("last_name")
   email               String   @unique
-  password            String
+  password            String?  // Nullable - users from Google Sheets can use "Forgot Password"
   phoneNumber         String?  @map("phone_number")
   etsyStoreUrl        String?  @map("etsy_store_url")
   role                    String   @default("user") // "user" or "admin"
