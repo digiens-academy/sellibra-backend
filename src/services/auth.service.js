@@ -99,6 +99,11 @@ class AuthService {
         throw new Error('E-posta veya şifre hatalı');
       }
 
+      // Check if user has no password (imported from Google Sheets)
+      if (!user.password) {
+        throw new Error('Henüz şifre belirlemediniz. Lütfen "Şifremi Unuttum" seçeneğini kullanarak şifrenizi belirleyin.');
+      }
+
       // Check password
       const isPasswordValid = await bcrypt.compare(password, user.password);
 

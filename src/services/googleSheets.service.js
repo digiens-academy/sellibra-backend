@@ -215,7 +215,7 @@ class GoogleSheetsService {
     }
   }
 
-  // Manual sync all users
+  // Manual sync all users (DATABASE -> SHEET, sadece yeni kullanıcıları ekle)
   async syncAllUsers() {
     const sheets = getSheetsClient();
     
@@ -232,14 +232,30 @@ class GoogleSheetsService {
         orderBy: { registeredAt: 'asc' },
       });
 
-      // Clear existing data (keep header)
-      await sheets.spreadsheets.values.clear({
+      // Get existing emails from sheet
+      const response = await sheets.spreadsheets.values.get({
         spreadsheetId: this.spreadsheetId,
-        range: `${sheetName}!A2:F`,
+        range: `${sheetName}!C:C`, // Email column
       });
 
-      // Prepare rows
-      const rows = users.map((user) => [
+      const existingEmails = new Set();
+      if (response.data.values) {
+        // Skip header row
+        response.data.values.slice(1).forEach(row => {
+          if (row[0]) existingEmails.add(row[0]);
+        });
+      }
+
+      // Filter users that don't exist in sheet
+      const newUsers = users.filter(user => !existingEmails.has(user.email));
+
+      if (newUsers.length === 0) {
+        logger.info('No new users to sync to Google Sheets');
+        return { success: true, message: 'Senkronize edilecek yeni kullanıcı yok' };
+      }
+
+      // Prepare rows for new users
+      const rows = newUsers.map((user) => [
         user.firstName,
         user.lastName,
         user.email,
@@ -248,11 +264,12 @@ class GoogleSheetsService {
         user.printNestConfirmed ? 'EVET' : 'HAYIR',
       ]);
 
-      // Append all users
+      // Append new users (don't clear existing data)
       await sheets.spreadsheets.values.append({
         spreadsheetId: this.spreadsheetId,
-        range: `${sheetName}!A2:F`,
+        range: `${sheetName}!A:F`,
         valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
         resource: {
           values: rows,
         },
@@ -261,11 +278,121 @@ class GoogleSheetsService {
       // Log sync
       await this.logSync(null, 'manual_sync', 'success', null);
 
-      logger.info(`Synced ${users.length} users to Google Sheets`);
-      return { success: true, message: `${users.length} kullanıcı senkronize edildi` };
+      logger.info(`Synced ${newUsers.length} new users to Google Sheets`);
+      return { success: true, message: `${newUsers.length} yeni kullanıcı senkronize edildi` };
     } catch (error) {
       logger.error('Error syncing all users:', error.message);
       await this.logSync(null, 'manual_sync', 'failed', error.message);
+      return { success: false, message: error.message };
+    }
+  }
+
+  // Import users from Google Sheets to Database (SHEET -> DATABASE)
+  async importFromSheet() {
+    const sheets = getSheetsClient();
+    
+    if (!sheets) {
+      logger.warn('Google Sheets not initialized, skipping import');
+      return { success: false, message: 'Google Sheets not configured' };
+    }
+
+    try {
+      const sheetName = await this.getSheetName();
+      
+      // Get all rows from sheet
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: `${sheetName}!A:F`,
+      });
+
+      const rows = response.data.values;
+      if (!rows || rows.length <= 1) {
+        logger.info('No users in Google Sheets to import');
+        return { success: true, message: 'Sheet\'te içe aktarılacak kullanıcı yok' };
+      }
+
+      // Get existing emails from database
+      const existingUsers = await prisma.user.findMany({
+        select: { email: true },
+      });
+      const existingEmails = new Set(existingUsers.map(u => u.email));
+
+      // Parse rows (skip header)
+      const newUsers = [];
+      const errors = [];
+
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const [firstName, lastName, email, etsyStoreUrl, registeredAt, printNestConfirmed] = row;
+
+        // Validate required fields
+        if (!email || !firstName || !lastName) {
+          errors.push(`Satır ${i + 1}: Email, ad ve soyad zorunludur`);
+          continue;
+        }
+
+        // Skip if already exists in database
+        if (existingEmails.has(email)) {
+          logger.info(`User ${email} already exists in database, skipping`);
+          continue;
+        }
+
+        // Prepare user data
+        // Parse registeredAt date safely
+        let parsedDate = new Date();
+        if (registeredAt) {
+          const tempDate = new Date(registeredAt);
+          // Check if date is valid
+          if (!isNaN(tempDate.getTime())) {
+            parsedDate = tempDate;
+          }
+        }
+
+        const userData = {
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          email: email.trim().toLowerCase(),
+          password: null, // No password - user must use "forgot password"
+          phoneNumber: null,
+          etsyStoreUrl: etsyStoreUrl && etsyStoreUrl !== '-' ? etsyStoreUrl : null,
+          printNestConfirmed: printNestConfirmed === 'EVET',
+          role: 'user',
+          dailyTokens: 40,
+          lastTokenReset: new Date(),
+          registeredAt: parsedDate,
+          hasActiveSubscription: false,
+        };
+
+        newUsers.push(userData);
+      }
+
+      if (newUsers.length === 0) {
+        if (errors.length > 0) {
+          return { success: false, message: 'İçe aktarma başarısız', errors };
+        }
+        return { success: true, message: 'Tüm kullanıcılar zaten database\'de mevcut' };
+      }
+
+      // Create users in database
+      const createdUsers = await prisma.user.createMany({
+        data: newUsers,
+        skipDuplicates: true,
+      });
+
+      // Log sync
+      await this.logSync(null, 'sheet_to_db_import', 'success', null);
+
+      logger.info(`Imported ${createdUsers.count} users from Google Sheets to database`);
+      
+      return { 
+        success: true, 
+        message: `${createdUsers.count} kullanıcı içe aktarıldı. Bu kullanıcılar "Şifremi Unuttum" ile şifre belirleyebilir.`,
+        imported: createdUsers.count,
+        errors: errors.length > 0 ? errors : undefined
+      };
+    } catch (error) {
+      logger.error('Error importing from Google Sheets:', error.message);
+      await this.logSync(null, 'sheet_to_db_import', 'failed', error.message);
       return { success: false, message: error.message };
     }
   }

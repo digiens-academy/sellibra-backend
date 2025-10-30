@@ -165,11 +165,28 @@ class AdminController {
   }
 
   // @route   POST /api/admin/sync-to-sheets
-  // @desc    Manual sync to Google Sheets
+  // @desc    Manual sync to Google Sheets (DATABASE -> SHEET)
   // @access  Private (Admin only)
   async syncToSheets(req, res, next) {
     try {
       const result = await googleSheetsService.syncAllUsers();
+
+      if (result.success) {
+        return successResponse(res, result, result.message);
+      } else {
+        return errorResponse(res, result.message, 500);
+      }
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // @route   POST /api/admin/import-from-sheets
+  // @desc    Import users from Google Sheets to Database (SHEET -> DATABASE)
+  // @access  Private (Admin only)
+  async importFromSheets(req, res, next) {
+    try {
+      const result = await googleSheetsService.importFromSheet();
 
       if (result.success) {
         return successResponse(res, result, result.message);
