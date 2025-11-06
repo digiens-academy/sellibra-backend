@@ -242,6 +242,36 @@ class AdminController {
       next(error);
     }
   }
+
+  // @route   GET /api/admin/settings
+  // @desc    Get system settings
+  // @access  Private (Admin only)
+  async getSettings(req, res, next) {
+    try {
+      const settings = await adminService.getSystemSettings();
+      return successResponse(res, { settings }, 'Sistem ayarları getirildi');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // @route   PUT /api/admin/settings
+  // @desc    Update system setting
+  // @access  Private (Admin only)
+  async updateSetting(req, res, next) {
+    try {
+      const { settingKey, settingValue } = req.body;
+      
+      if (!settingKey || settingValue === undefined) {
+        throw new Error('settingKey ve settingValue gereklidir');
+      }
+      
+      const setting = await adminService.updateSystemSetting(settingKey, settingValue);
+      return successResponse(res, { setting }, 'Ayar güncellendi');
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new AdminController();

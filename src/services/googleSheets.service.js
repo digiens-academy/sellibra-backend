@@ -3,6 +3,7 @@ const { formatDateForSheets } = require('../utils/helpers');
 const { prisma } = require('../config/database');
 const config = require('../config/env');
 const logger = require('../utils/logger');
+const adminService = require('./admin.service');
 
 class GoogleSheetsService {
   constructor() {
@@ -52,13 +53,19 @@ class GoogleSheetsService {
     try {
       const sheetName = await this.getSheetName();
       
+      // Sistem ayarından default değeri al
+      const defaultPrintNestConfirmed = await adminService.getSettingValue(
+        'default_printnest_confirmed', 
+        true  // Default olarak true
+      );
+      
       const row = [
         userData.firstName || '',
         userData.lastName || '',
         userData.email || '',
         userData.etsyStoreUrl || '-',
         formatDateForSheets(userData.registeredAt || new Date()),
-        'HAYIR', // Default: PrintNest Kayıt Olmuş = HAYIR
+        defaultPrintNestConfirmed ? 'EVET' : 'HAYIR',  // Dinamik
       ];
 
       await sheets.spreadsheets.values.append({
