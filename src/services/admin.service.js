@@ -223,6 +223,124 @@ class AdminService {
       throw error;
     }
   }
+
+  // Get system settings
+  async getSystemSettings() {
+    try {
+      const settings = await prisma.systemSettings.findMany();
+      
+      // Eğer ayarlar yoksa, default ayarları oluştur
+      if (settings.length === 0) {
+        await this.initializeDefaultSettings();
+        return await prisma.systemSettings.findMany();
+      }
+      
+      // Ayarları key-value objesine çevir
+      const settingsObj = {};
+      settings.forEach(setting => {
+        let value = setting.settingValue;
+        
+        // Type'a göre dönüştür
+        if (setting.settingType === 'boolean') {
+          value = value === 'true';
+        } else if (setting.settingType === 'number') {
+          value = parseFloat(value);
+        }
+        
+        settingsObj[setting.settingKey] = {
+          value,
+          type: setting.settingType,
+          description: setting.description,
+        };
+      });
+      
+      return settingsObj;
+    } catch (error) {
+      logger.error('Get system settings error:', error);
+      throw error;
+    }
+  }
+
+  // Initialize default settings
+  async initializeDefaultSettings() {
+    try {
+      const defaultSettings = [
+        {
+          settingKey: 'default_printnest_confirmed',
+          settingValue: 'true',
+          settingType: 'boolean',
+          description: 'Yeni kullanıcılar varsayılan olarak PrintNest onaylı mı olsun?',
+        },
+        {
+          settingKey: 'default_daily_tokens',
+          settingValue: '40',
+          settingType: 'number',
+          description: 'Yeni kullanıcılar için varsayılan günlük token sayısı',
+        },
+      ];
+      
+      for (const setting of defaultSettings) {
+        await prisma.systemSettings.upsert({
+          where: { settingKey: setting.settingKey },
+          update: {},
+          create: setting,
+        });
+      }
+      
+      logger.info('Default system settings initialized');
+    } catch (error) {
+      logger.error('Initialize default settings error:', error);
+      throw error;
+    }
+  }
+
+  // Update system setting
+  async updateSystemSetting(settingKey, settingValue) {
+    try {
+      // Değeri string'e çevir
+      const valueStr = String(settingValue);
+      
+      const setting = await prisma.systemSettings.upsert({
+        where: { settingKey },
+        update: { settingValue: valueStr },
+        create: {
+          settingKey,
+          settingValue: valueStr,
+          settingType: typeof settingValue === 'boolean' ? 'boolean' : 
+                       typeof settingValue === 'number' ? 'number' : 'string',
+        },
+      });
+      
+      logger.info(`System setting ${settingKey} updated to ${valueStr}`);
+      return setting;
+    } catch (error) {
+      logger.error('Update system setting error:', error);
+      throw error;
+    }
+  }
+
+  // Get single setting value (helper)
+  async getSettingValue(settingKey, defaultValue = null) {
+    try {
+      const setting = await prisma.systemSettings.findUnique({
+        where: { settingKey },
+      });
+      
+      if (!setting) return defaultValue;
+      
+      // Type'a göre dönüştür
+      if (setting.settingType === 'boolean') {
+        return setting.settingValue === 'true';
+      } else if (setting.settingType === 'number') {
+        return parseFloat(setting.settingValue);
+      }
+      
+      return setting.settingValue;
+    } catch (error) {
+      logger.error('Get setting value error:', error);
+      return defaultValue;
+    }
+  }
 }
 
 module.exports = new AdminService();

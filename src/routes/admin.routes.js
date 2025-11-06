@@ -31,5 +31,9 @@ router.post('/sync-to-sheets', adminController.syncToSheets);
 router.post('/import-from-sheets', adminController.importFromSheets);
 router.get('/sync-logs', adminController.getSyncLogs);
 
+// System settings
+router.get('/settings', adminController.getSettings);
+router.put('/settings', adminController.updateSetting);
+
 module.exports = router;
 

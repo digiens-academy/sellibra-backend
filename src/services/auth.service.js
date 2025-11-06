@@ -6,6 +6,7 @@ const googleSheetsService = require('./googleSheets.service');
 const etsyService = require('./etsy.service');
 const subscriptionService = require('./subscription.service');
 const emailService = require('./email.service');
+const adminService = require('./admin.service');
 const logger = require('../utils/logger');
 
 class AuthService {
@@ -38,6 +39,16 @@ class AuthService {
       // Hash password
       const hashedPassword = await bcrypt.hash(userData.password, 10);
 
+      // Sistem ayarlarından default değerleri al
+      const defaultPrintNestConfirmed = await adminService.getSettingValue(
+        'default_printnest_confirmed', 
+        true  // Default olarak true
+      );
+      const defaultDailyTokens = await adminService.getSettingValue(
+        'default_daily_tokens', 
+        40
+      );
+
       // Create user
       const user = await prisma.user.create({
         data: {
@@ -47,6 +58,8 @@ class AuthService {
           password: hashedPassword,
           phoneNumber: userData.phoneNumber || null,
           etsyStoreUrl: normalizedEtsyUrl || userData.etsyStoreUrl || null,
+          printNestConfirmed: defaultPrintNestConfirmed,  // Dinamik olarak ayardan gelir
+          dailyTokens: defaultDailyTokens,  // Dinamik olarak ayardan gelir
         },
       });
 

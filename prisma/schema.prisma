@@ -95,3 +95,15 @@ model EtsyStore {
   @@map("etsy_stores")
 }
 
+// System Settings table
+model SystemSettings {
+  id                        Int      @id @default(autoincrement())
+  settingKey                String   @unique @map("setting_key")
+  settingValue              String   @map("setting_value")
+  settingType               String   @map("setting_type") // "boolean", "string", "number"
+  description               String?
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+  
+  @@map("system_settings")
+}
+
