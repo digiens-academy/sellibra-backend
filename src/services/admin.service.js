@@ -60,6 +60,9 @@ class AdminService {
             orderBy: { iframeOpenedAt: 'desc' },
             take: 10,
           },
+          etsyStores: {
+            orderBy: { createdAt: 'asc' },
+          },
         },
       });
 
@@ -70,6 +73,7 @@ class AdminService {
       return {
         ...formatUser(user),
         printNestSessions: user.printNestSessions,
+        etsyStores: user.etsyStores,
       };
     } catch (error) {
       logger.error('Get user by ID error:', error);

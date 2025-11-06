@@ -21,12 +21,12 @@ class UserController {
   // @access  Private
   async updateProfile(req, res, next) {
     try {
-      const { firstName, lastName, etsyStoreUrl } = req.body;
+      const { firstName, lastName, phoneNumber } = req.body;
 
       const user = await userService.updateProfile(req.user.id, {
         firstName,
         lastName,
-        etsyStoreUrl,
+        phoneNumber,
       });
 
       return successResponse(res, { user }, 'Profil güncellendi');

@@ -80,6 +80,21 @@ class AuthService {
         where: { id: user.id },
       });
 
+      // Add Etsy store to etsy_stores table
+      try {
+        await prisma.etsyStore.create({
+          data: {
+            userId: user.id,
+            storeUrl: normalizedEtsyUrl,
+            storeName: null, // Will be filled by user later if needed
+          },
+        });
+        logger.info(`✅ Etsy store added to etsy_stores table for user ${user.email}`);
+      } catch (error) {
+        logger.error('Failed to add store to etsy_stores table during registration:', error);
+        // Continue even if this fails - user can add it later from profile
+      }
+
       // Sync to Google Sheets (async, non-blocking - can happen in background)
       setImmediate(async () => {
         try {

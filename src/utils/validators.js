@@ -50,8 +50,9 @@ const validators = {
       .isLength({ min: 6 })
       .withMessage('Şifre en az 6 karakter olmalıdır'),
     body('etsyStoreUrl')
-      .optional({ checkFalsy: true })
       .trim()
+      .notEmpty()
+      .withMessage('Etsy mağaza URL\'si zorunludur')
       .custom((value) => {
         // Basit Etsy URL/shop name formatını kontrol et
         const etsyPattern = /etsy\.com\/shop\/[a-zA-Z0-9_-]+/i;
@@ -95,11 +96,6 @@ const validators = {
       .trim()
       .matches(/^[0-9]{10,15}$/)
       .withMessage('Geçerli bir telefon numarası giriniz (10-15 rakam)'),
-    body('etsyStoreUrl')
-      .optional({ checkFalsy: true })
-      .trim()
-      .isURL()
-      .withMessage('Geçerli bir URL giriniz'),
     validate,
   ],
 
