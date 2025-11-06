@@ -36,7 +36,6 @@ class UserService {
           firstName: updates.firstName || undefined,
           lastName: updates.lastName || undefined,
           phoneNumber: updates.phoneNumber !== undefined ? updates.phoneNumber : undefined,
-          etsyStoreUrl: updates.etsyStoreUrl !== undefined ? updates.etsyStoreUrl : undefined,
         },
       });
 
