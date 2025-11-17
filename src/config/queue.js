@@ -1,22 +1,28 @@
 const { Queue, Worker, QueueEvents } = require('bullmq');
-const { redis } = require('./redis');
 const logger = require('../utils/logger');
 
 // Queue connection configuration
 // Support REDIS_URL or individual settings
 // For multi-project: Use different database numbers (0-15) or same DB with key prefixes
+// IMPORTANT: BullMQ needs its own connection config, not the redis client from redis.js
 let connection;
 
 if (process.env.REDIS_URL) {
   // Parse REDIS_URL for BullMQ
+  // REDIS_URL format: redis://host:port/db or redis://host:port
   const redisUrl = process.env.REDIS_URL;
-  // BullMQ supports REDIS_URL directly, but we need to handle database number
-  if (process.env.REDIS_DB && !redisUrl.includes('/')) {
+  
+  // If URL already contains database number (redis://redis:6379/0), use it directly
+  if (redisUrl.includes('/') && /\d+$/.test(redisUrl.split('/').pop())) {
+    connection = redisUrl;
+  } else if (process.env.REDIS_DB) {
+    // Append database number if not in URL
     connection = `${redisUrl}/${process.env.REDIS_DB}`;
   } else {
     connection = redisUrl;
   }
 } else {
+  // Use individual settings - Docker container name should be used for host
   connection = {
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
