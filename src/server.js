@@ -46,6 +46,10 @@ initializeGoogleSheets();
 
 // Middleware
 app.use(helmet()); // Security headers
+
+// Trust proxy - required for rate limiting behind reverse proxy (Nginx, etc.)
+app.set('trust proxy', 1); // Trust first proxy
+
 app.use(cors({
   origin: config.frontendUrl,
   credentials: true,
@@ -102,16 +106,18 @@ const aiLimiter = rateLimit({
 });
 
 // Auth endpoints limiter - prevent brute force attacks
+// More lenient for development/testing, but still protects against brute force
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 auth requests per 15 minutes
+  max: 15, // Limit each IP to 15 auth requests per 15 minutes (increased from 5 for better UX)
   message: {
     success: false,
     message: 'Çok fazla giriş denemesi. Lütfen 15 dakika sonra tekrar deneyin.',
   },
   standardHeaders: true,
   legacyHeaders: false,
-  skipSuccessfulRequests: true, // Don't count successful requests
+  skipSuccessfulRequests: true, // Don't count successful requests (only failed attempts count)
+  // Note: Using memory store by default. For distributed systems, consider adding rate-limit-redis package
 });
 
 // Admin endpoints limiter - higher limit for admin operations
