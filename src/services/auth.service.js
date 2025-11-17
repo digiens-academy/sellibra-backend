@@ -7,7 +7,6 @@ const etsyService = require('./etsy.service');
 const subscriptionService = require('./subscription.service');
 const emailService = require('./email.service');
 const adminService = require('./admin.service');
-const cacheService = require('./cache.service');
 const logger = require('../utils/logger');
 
 class AuthService {
@@ -190,11 +189,7 @@ class AuthService {
             where: { id: userId },
           });
           
-          // Update cache with fresh data
-          const formattedUser = formatUser(updatedUser || user);
-          await cacheService.setUserCache(userId, formattedUser);
-          
-          return formattedUser;
+          return formatUser(updatedUser || user);
         } catch (error) {
           logger.error('Subscription check failed in getCurrentUser:', error);
           // Continue with existing user data if subscription check fails
@@ -204,24 +199,6 @@ class AuthService {
       return formatUser(user);
     } catch (error) {
       logger.error('Get current user error:', error);
-      throw error;
-    }
-  }
-
-  // Logout user (blacklist token and clear cache)
-  async logout(userId, token) {
-    try {
-      // Add token to blacklist (expires when JWT expires - 7 days default)
-      const sevenDaysInSeconds = 7 * 24 * 60 * 60;
-      await cacheService.addTokenToBlacklist(token, sevenDaysInSeconds);
-      
-      // Clear user cache
-      await cacheService.clearUserData(userId);
-      
-      logger.info(`User ${userId} logged out successfully`);
-      return { message: 'Çıkış başarılı' };
-    } catch (error) {
-      logger.error('Logout error:', error);
       throw error;
     }
   }

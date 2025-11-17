@@ -1,5 +1,4 @@
 const printNestService = require('../services/printnest.service');
-const cacheService = require('../services/cache.service');
 const { successResponse, errorResponse } = require('../utils/helpers');
 
 class PrintNestController {
@@ -42,9 +41,6 @@ class PrintNestController {
         totalTimeSpent: timeSpent ? parseInt(timeSpent) : undefined,
       });
 
-      // Session güncellendiğinde cache'i temizle
-      await cacheService.deleteUserSessionsCache(req.user.id);
-
       return successResponse(res, { session }, 'Session kapatıldı');
     } catch (error) {
       if (error.message === 'Session bulunamadı') {
@@ -80,24 +76,10 @@ class PrintNestController {
       const userId = req.user.id;
       const limit = parseInt(req.query.limit) || 20;
 
-      // Cache'den deneme
-      const cacheKey = `${userId}_${limit}`;
-      let cachedData = await cacheService.getUserSessionsCache(cacheKey);
-
-      if (cachedData) {
-        return successResponse(res, cachedData, 'Sessions retrieved (cached)');
-      }
-
-      // Cache'de yoksa DB'den çek
       const sessions = await printNestService.getUserSessions(userId, limit);
       const stats = await printNestService.getUserSessionStats(userId);
 
-      const responseData = { sessions, stats };
-
-      // Cache'e kaydet (30 dakika)
-      await cacheService.setUserSessionsCache(cacheKey, responseData, 1800);
-
-      return successResponse(res, responseData, 'Sessions retrieved');
+      return successResponse(res, { sessions, stats }, 'Sessions retrieved');
     } catch (error) {
       next(error);
     }
