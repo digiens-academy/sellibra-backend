@@ -1,5 +1,4 @@
 const axios = require('axios');
-const axiosRetry = require('axios-retry');
 const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
@@ -8,18 +7,24 @@ const logger = require('../utils/logger');
 const config = require('../config/env');
 
 // Configure axios retry for all requests
-axiosRetry(axios, {
-  retries: 3,
-  retryDelay: axiosRetry.exponentialDelay, // Exponential backoff: 100ms, 200ms, 400ms
-  retryCondition: (error) => {
-    // Retry on network errors or 5xx server errors
-    return axiosRetry.isNetworkOrIdempotentRequestError(error) || 
-           (error.response && error.response.status >= 500);
-  },
-  onRetry: (retryCount, error, requestConfig) => {
-    logger.warn(`API request retry ${retryCount}/3: ${requestConfig.url}`);
-  },
-});
+// axios-retry v4 CommonJS import - uses .default property
+const axiosRetryModule = require('axios-retry');
+const axiosRetry = axiosRetryModule.default || axiosRetryModule;
+
+if (axiosRetry && typeof axiosRetry === 'function') {
+  axiosRetry(axios, {
+    retries: 3,
+    retryDelay: axiosRetryModule.exponentialDelay, // Use exponentialDelay helper
+    retryCondition: (error) => {
+      // Retry on network errors or 5xx server errors
+      return axiosRetryModule.isNetworkOrIdempotentRequestError(error) || 
+             (error.response && error.response.status >= 500);
+    },
+    onRetry: (retryCount, error, requestConfig) => {
+      logger.warn(`API request retry ${retryCount}/3: ${requestConfig.url}`);
+    },
+  });
+}
 
 class AIService {
   /**

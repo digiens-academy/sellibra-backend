@@ -1,21 +1,26 @@
 const axios = require('axios');
-const axiosRetry = require('axios-retry');
 const { prisma } = require('../config/database');
 const { cache } = require('../config/redis');
 const logger = require('../utils/logger');
 
 // Configure axios retry for subscription API
-axiosRetry(axios, {
-  retries: 2, // Retry 2 times (3 total attempts)
-  retryDelay: axiosRetry.exponentialDelay,
-  retryCondition: (error) => {
-    return axiosRetry.isNetworkOrIdempotentRequestError(error) || 
-           (error.response && error.response.status >= 500);
-  },
-  onRetry: (retryCount, error, requestConfig) => {
-    logger.warn(`Subscription API retry ${retryCount}/2: ${requestConfig.url}`);
-  },
-});
+// axios-retry v4 CommonJS import - uses .default property
+const axiosRetryModule = require('axios-retry');
+const axiosRetry = axiosRetryModule.default || axiosRetryModule;
+
+if (axiosRetry && typeof axiosRetry === 'function') {
+  axiosRetry(axios, {
+    retries: 2, // Retry 2 times (3 total attempts)
+    retryDelay: axiosRetryModule.exponentialDelay, // Use exponentialDelay helper
+    retryCondition: (error) => {
+      return axiosRetryModule.isNetworkOrIdempotentRequestError(error) || 
+             (error.response && error.response.status >= 500);
+    },
+    onRetry: (retryCount, error, requestConfig) => {
+      logger.warn(`Subscription API retry ${retryCount}/2: ${requestConfig.url}`);
+    },
+  });
+}
 
 class SubscriptionService {
   constructor() {
