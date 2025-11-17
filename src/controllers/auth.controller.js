@@ -74,10 +74,19 @@ class AuthController {
   // @route   POST /api/auth/logout
   // @desc    Logout user
   // @access  Private
-  async logout(req, res) {
-    // Token-based auth doesn't require server-side logout
-    // Client should remove token from storage
-    return successResponse(res, null, 'Çıkış başarılı');
+  async logout(req, res, next) {
+    try {
+      // Get token from header
+      const token = req.headers.authorization?.split(' ')[1];
+      
+      if (token) {
+        await authService.logout(req.user.id, token);
+      }
+      
+      return successResponse(res, null, 'Çıkış başarılı');
+    } catch (error) {
+      next(error);
+    }
   }
 
   // @route   POST /api/auth/forgot-password
