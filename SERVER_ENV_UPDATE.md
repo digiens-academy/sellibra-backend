@@ -82,13 +82,13 @@ REDIS_URL=redis://localhost:6379
 # REDIS_URL=redis://redis:6379
 
 # Resend (Email)
-RESEND_API_KEY=re_NeCUdYn6_9sFjsbdwvmuegJdqhVYWZPxq
+RESEND_API_KEY=YOUR_RESEND_API_KEY_HERE
 
 # OpenAI
-OPENAI_API_KEY=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
+OPENAI_API_KEY=sk-proj-YOUR_OPENAI_API_KEY_HERE
 
 # Remove.bg
-REMOVE_BG_API_KEY=3ydUuDeT3Pjwog2vRzJH5mm8
+REMOVE_BG_API_KEY=YOUR_REMOVE_BG_API_KEY_HERE
 ```
 
 ## ✅ Server'da Yapılacaklar
