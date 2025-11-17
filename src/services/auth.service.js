@@ -49,24 +49,45 @@ class AuthService {
         40
       );
 
-      // Create user
-      const user = await prisma.user.create({
-        data: {
-          firstName: userData.firstName,
-          lastName: userData.lastName,
-          email: userData.email,
-          password: hashedPassword,
-          phoneNumber: userData.phoneNumber || null,
-          etsyStoreUrl: normalizedEtsyUrl || userData.etsyStoreUrl || null,
-          printNestConfirmed: defaultPrintNestConfirmed,  // Dinamik olarak ayardan gelir
-          dailyTokens: defaultDailyTokens,  // Dinamik olarak ayardan gelir
-        },
+      // Use transaction for atomic user and store creation
+      const user = await prisma.$transaction(async (tx) => {
+        // Create user
+        const newUser = await tx.user.create({
+          data: {
+            firstName: userData.firstName,
+            lastName: userData.lastName,
+            email: userData.email,
+            password: hashedPassword,
+            phoneNumber: userData.phoneNumber || null,
+            etsyStoreUrl: normalizedEtsyUrl || userData.etsyStoreUrl || null,
+            printNestConfirmed: defaultPrintNestConfirmed,
+            dailyTokens: defaultDailyTokens,
+          },
+        });
+
+        // Add Etsy store to etsy_stores table (within same transaction)
+        try {
+          await tx.etsyStore.create({
+            data: {
+              userId: newUser.id,
+              storeUrl: normalizedEtsyUrl,
+              storeName: null,
+            },
+          });
+          logger.info(`✅ Etsy store added to etsy_stores table for user ${newUser.email}`);
+        } catch (error) {
+          logger.error('Failed to add store to etsy_stores table during registration:', error);
+          // Transaction will rollback if this fails
+          throw error;
+        }
+
+        return newUser;
       });
 
       // Generate token
       const token = generateToken(user.id);
 
-      // Check premium subscription synchronously to include in response
+      // Check premium subscription synchronously to include in response (outside transaction)
       try {
         await subscriptionService.updateUserSubscriptionStatus(user.email);
         logger.info(`Subscription status checked for ${user.email}`);
@@ -75,35 +96,59 @@ class AuthService {
         // Continue even if subscription check fails
       }
 
-      // Get updated user with subscription status
+      // Get updated user with subscription status (use select to get only needed fields)
       const updatedUser = await prisma.user.findUnique({
         where: { id: user.id },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phoneNumber: true,
+          etsyStoreUrl: true,
+          role: true,
+          isSuperAdmin: true,
+          hasActiveSubscription: true,
+          subscriptionCheckedAt: true,
+          registeredAt: true,
+          printNestConfirmed: true,
+          dailyTokens: true,
+          lastTokenReset: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       });
 
-      // Add Etsy store to etsy_stores table
-      try {
-        await prisma.etsyStore.create({
-          data: {
-            userId: user.id,
-            storeUrl: normalizedEtsyUrl,
-            storeName: null, // Will be filled by user later if needed
+      // Sync to Google Sheets via queue (async, non-blocking)
+      const { queues } = require('../config/queue');
+      if (queues.googleSheetsSync) {
+        queues.googleSheetsSync.add(
+          'sync-user',
+          {
+            type: 'append-user',
+            data: { user: updatedUser || user },
           },
+          {
+            attempts: 3,
+            backoff: {
+              type: 'exponential',
+              delay: 5000,
+            },
+          }
+        ).catch((error) => {
+          logger.error('Failed to queue Google Sheets sync:', error);
         });
-        logger.info(`✅ Etsy store added to etsy_stores table for user ${user.email}`);
-      } catch (error) {
-        logger.error('Failed to add store to etsy_stores table during registration:', error);
-        // Continue even if this fails - user can add it later from profile
+      } else {
+        // Fallback to direct sync if queue not available
+        setImmediate(async () => {
+          try {
+            await googleSheetsService.appendUserToSheet(updatedUser || user);
+            logger.info(`User ${user.email} synced to Google Sheets`);
+          } catch (error) {
+            logger.error('Google Sheets sync failed during registration:', error);
+          }
+        });
       }
-
-      // Sync to Google Sheets (async, non-blocking - can happen in background)
-      setImmediate(async () => {
-        try {
-          await googleSheetsService.appendUserToSheet(updatedUser || user);
-          logger.info(`User ${user.email} synced to Google Sheets`);
-        } catch (error) {
-          logger.error('Google Sheets sync failed during registration:', error);
-        }
-      });
 
       return {
         user: formatUser(updatedUser || user),
@@ -151,9 +196,27 @@ class AuthService {
         // Continue even if subscription check fails
       }
 
-      // Get updated user with subscription status
+      // Get updated user with subscription status (use select to get only needed fields)
       const updatedUser = await prisma.user.findUnique({
         where: { id: user.id },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phoneNumber: true,
+          etsyStoreUrl: true,
+          role: true,
+          isSuperAdmin: true,
+          hasActiveSubscription: true,
+          subscriptionCheckedAt: true,
+          registeredAt: true,
+          printNestConfirmed: true,
+          dailyTokens: true,
+          lastTokenReset: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       });
 
       return {
@@ -184,9 +247,27 @@ class AuthService {
           await subscriptionService.updateUserSubscriptionStatus(user.email);
           logger.info(`Subscription status updated for ${user.email}`);
           
-          // Get updated user with fresh subscription status
+          // Get updated user with fresh subscription status (use select)
           const updatedUser = await prisma.user.findUnique({
             where: { id: userId },
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              phoneNumber: true,
+              etsyStoreUrl: true,
+              role: true,
+              isSuperAdmin: true,
+              hasActiveSubscription: true,
+              subscriptionCheckedAt: true,
+              registeredAt: true,
+              printNestConfirmed: true,
+              dailyTokens: true,
+              lastTokenReset: true,
+              createdAt: true,
+              updatedAt: true,
+            },
           });
           
           return formatUser(updatedUser || user);

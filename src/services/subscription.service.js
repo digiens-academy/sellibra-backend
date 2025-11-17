@@ -1,6 +1,21 @@
 const axios = require('axios');
+const axiosRetry = require('axios-retry');
 const { prisma } = require('../config/database');
+const { cache } = require('../config/redis');
 const logger = require('../utils/logger');
+
+// Configure axios retry for subscription API
+axiosRetry(axios, {
+  retries: 2, // Retry 2 times (3 total attempts)
+  retryDelay: axiosRetry.exponentialDelay,
+  retryCondition: (error) => {
+    return axiosRetry.isNetworkOrIdempotentRequestError(error) || 
+           (error.response && error.response.status >= 500);
+  },
+  onRetry: (retryCount, error, requestConfig) => {
+    logger.warn(`Subscription API retry ${retryCount}/2: ${requestConfig.url}`);
+  },
+});
 
 class SubscriptionService {
   constructor() {
@@ -19,7 +34,7 @@ class SubscriptionService {
           email: email,
           type: 'PREMIUM'
         },
-        timeout: 5000, // 5 saniye timeout
+        timeout: 10000, // 10 seconds timeout (increased from 5s for retry)
       });
 
       logger.info(`Subscription check for ${email}:`, response.data);
@@ -50,13 +65,23 @@ class SubscriptionService {
     try {
       const subscriptionData = await this.checkPremiumSubscription(email);
 
-      await prisma.user.update({
+      const updatedUser = await prisma.user.update({
         where: { email },
         data: {
           hasActiveSubscription: subscriptionData.hasActiveSubscription,
           subscriptionCheckedAt: new Date(),
         },
+        select: {
+          id: true,
+          hasActiveSubscription: true,
+        },
       });
+
+      // Invalidate cache for this user
+      const cacheKey = `user:${updatedUser.id}:subscription`;
+      await cache.del(cacheKey);
+      // Also update cache with new value
+      await cache.set(cacheKey, updatedUser.hasActiveSubscription, 3600);
 
       logger.info(`Subscription status updated for ${email}: ${subscriptionData.hasActiveSubscription}`);
       
@@ -74,6 +99,16 @@ class SubscriptionService {
    */
   async hasActivePremiumSubscription(userId) {
     try {
+      // Try Redis cache first
+      const cacheKey = `user:${userId}:subscription`;
+      const cachedStatus = await cache.get(cacheKey);
+      
+      if (cachedStatus !== null) {
+        logger.debug(`Subscription cache hit for user ${userId}`);
+        return cachedStatus;
+      }
+
+      // Cache miss - get from database
       const user = await prisma.user.findUnique({
         where: { id: userId },
         select: {
@@ -87,14 +122,19 @@ class SubscriptionService {
         return false;
       }
 
+      let hasActivePremium = user.hasActiveSubscription || false;
+
       // Eğer son kontrol 1 saatten eskiyse, yeniden kontrol et
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
       if (!user.subscriptionCheckedAt || user.subscriptionCheckedAt < oneHourAgo) {
         logger.info(`Subscription cache expired for user ${userId}, checking again...`);
-        return await this.updateUserSubscriptionStatus(user.email);
+        hasActivePremium = await this.updateUserSubscriptionStatus(user.email);
       }
 
-      return user.hasActiveSubscription || false;
+      // Cache the result for 1 hour
+      await cache.set(cacheKey, hasActivePremium, 3600);
+
+      return hasActivePremium;
     } catch (error) {
       logger.error('Error checking premium subscription:', error);
       return false; // Hata durumunda false döndür

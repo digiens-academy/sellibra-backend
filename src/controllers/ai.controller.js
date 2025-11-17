@@ -1,6 +1,8 @@
 const aiService = require('../services/ai.service');
 const userService = require('../services/user.service');
 const { successResponse, errorResponse } = require('../utils/helpers');
+const { queues } = require('../config/queue');
+const { tempDir } = require('../config/upload');
 const logger = require('../utils/logger');
 const fs = require('fs');
 const path = require('path');
@@ -26,27 +28,66 @@ class AIController {
         return errorResponse(res, 'Lütfen bir görsel yükleyin', 400);
       }
 
-      uploadedFilePath = req.file.path;
-      logger.info(`Arka plan kaldırma isteği: ${req.file.filename}`);
+      // Memory storage kullanıldığı için dosyayı geçici olarak disk'e yaz
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const fileExtension = path.extname(req.file.originalname || '.png');
+      uploadedFilePath = path.join(tempDir, `image-${uniqueSuffix}${fileExtension}`);
+      fs.writeFileSync(uploadedFilePath, req.file.buffer);
+      
+      logger.info(`Arka plan kaldırma isteği: ${req.file.originalname}`);
 
-      // Arka planı kaldır
-      const processedImageBuffer = await aiService.removeBackground(uploadedFilePath);
+      // Check if queue is available (Redis connection)
+      if (!queues.aiRemoveBackground) {
+        // Fallback: Process directly without queue
+        logger.warn('Queue not available, processing directly');
+        const processedImageBuffer = await aiService.removeBackground(uploadedFilePath);
+        const tokenResult = await userService.consumeTokens(req.user.id, 4);
+        
+        // Cleanup temp file
+        if (fs.existsSync(uploadedFilePath)) {
+          fs.unlinkSync(uploadedFilePath);
+        }
+        
+        const base64Image = processedImageBuffer.toString('base64');
+        return successResponse(
+          res,
+          {
+            image: `data:image/png;base64,${base64Image}`,
+            filename: `removed-bg-${req.file.originalname}.png`,
+            remainingTokens: tokenResult.remainingTokens
+          },
+          'Arka plan başarıyla kaldırıldı'
+        );
+      }
 
-      // Token tüket
-      const tokenResult = await userService.consumeTokens(req.user.id, 4);
+      // Add job to queue
+      const job = await queues.aiRemoveBackground.add(
+        'remove-background',
+        {
+          imagePath: uploadedFilePath,
+          userId: req.user.id,
+          tokenAmount: 4,
+        },
+        {
+          timeout: 60000, // 60 seconds timeout
+          attempts: 3,
+        }
+      );
 
-      // Geçici dosyayı sil
-      await aiService.cleanupTempFiles([uploadedFilePath]);
-
-      // İşlenmiş görseli base64 olarak döndür
-      const base64Image = processedImageBuffer.toString('base64');
+      // Wait for job to complete (with timeout)
+      const result = await Promise.race([
+        job.waitUntilFinished(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('İşlem zaman aşımına uğradı')), 120000)
+        ),
+      ]);
 
       return successResponse(
         res,
         {
-          image: `data:image/png;base64,${base64Image}`,
+          image: `data:image/png;base64,${result.imageBuffer}`,
           filename: `removed-bg-${req.file.filename}.png`,
-          remainingTokens: tokenResult.remainingTokens
+          remainingTokens: result.remainingTokens
         },
         'Arka plan başarıyla kaldırıldı'
       );
@@ -59,12 +100,16 @@ class AIController {
 
       logger.error('Remove background error:', error);
       
-      if (error.message.includes('API key')) {
+      if (error.message.includes('API key') || error.message.includes('AI servisi')) {
         return errorResponse(res, 'AI servisi yapılandırması eksik. Lütfen yönetici ile iletişime geçin.', 503);
       }
 
       if (error.message.includes('Yetersiz token')) {
         return errorResponse(res, error.message, 403);
+      }
+
+      if (error.message.includes('zaman aşımı')) {
+        return errorResponse(res, 'İşlem çok uzun sürdü. Lütfen daha sonra tekrar deneyin.', 408);
       }
 
       next(error);
@@ -92,21 +137,61 @@ class AIController {
 
       logger.info(`Text-to-Image isteği: ${prompt}`);
 
-      const result = await aiService.textToImage(prompt, {
-        size: size || '1024x1024',
-        quality: quality || 'standard',
-        style: style || 'vivid'
-      });
+      // Check if queue is available
+      if (!queues.aiTextToImage) {
+        // Fallback: Process directly
+        logger.warn('Queue not available, processing directly');
+        const result = await aiService.textToImage(prompt, {
+          size: size || '1024x1024',
+          quality: quality || 'standard',
+          style: style || 'vivid'
+        });
+        const tokenResult = await userService.consumeTokens(req.user.id, 4);
+        
+        return successResponse(
+          res,
+          {
+            url: result.url,
+            revised_prompt: result.revised_prompt,
+            remainingTokens: tokenResult.remainingTokens
+          },
+          'Görsel başarıyla oluşturuldu'
+        );
+      }
 
-      // Token tüket
-      const tokenResult = await userService.consumeTokens(req.user.id, 4);
+      // Add job to queue
+      const job = await queues.aiTextToImage.add(
+        'text-to-image',
+        {
+          prompt,
+          options: {
+            size: size || '1024x1024',
+            quality: quality || 'standard',
+            style: style || 'vivid'
+          },
+          userId: req.user.id,
+          tokenAmount: 4,
+        },
+        {
+          timeout: 120000, // 120 seconds timeout for text-to-image
+          attempts: 3,
+        }
+      );
+
+      // Wait for job to complete
+      const result = await Promise.race([
+        job.waitUntilFinished(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('İşlem zaman aşımına uğradı')), 180000)
+        ),
+      ]);
 
       return successResponse(
         res,
         {
           url: result.url,
           revised_prompt: result.revised_prompt,
-          remainingTokens: tokenResult.remainingTokens
+          remainingTokens: result.remainingTokens
         },
         'Görsel başarıyla oluşturuldu'
       );
@@ -114,12 +199,16 @@ class AIController {
     } catch (error) {
       logger.error('Text-to-Image error:', error);
       
-      if (error.message.includes('API key')) {
+      if (error.message.includes('API key') || error.message.includes('OpenAI')) {
         return errorResponse(res, 'OpenAI API yapılandırması eksik. Lütfen yönetici ile iletişime geçin.', 503);
       }
 
       if (error.message.includes('Yetersiz token')) {
         return errorResponse(res, error.message, 403);
+      }
+
+      if (error.message.includes('zaman aşımı')) {
+        return errorResponse(res, 'İşlem çok uzun sürdü. Lütfen daha sonra tekrar deneyin.', 408);
       }
 
       next(error);
@@ -151,25 +240,71 @@ class AIController {
         return errorResponse(res, 'Lütfen bir açıklama girin', 400);
       }
 
-      uploadedFilePath = req.file.path;
+      // Memory storage kullanıldığı için dosyayı geçici olarak disk'e yaz
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const fileExtension = path.extname(req.file.originalname || '.png');
+      uploadedFilePath = path.join(tempDir, `image-${uniqueSuffix}${fileExtension}`);
+      fs.writeFileSync(uploadedFilePath, req.file.buffer);
+      
       logger.info(`Image-to-Image isteği: ${prompt}`);
 
-      const result = await aiService.imageToImage(uploadedFilePath, prompt, {
-        size: size || '1024x1024'
-      });
+      // Check if queue is available
+      if (!queues.aiImageToImage) {
+        // Fallback: Process directly
+        logger.warn('Queue not available, processing directly');
+        const result = await aiService.imageToImage(uploadedFilePath, prompt, {
+          size: size || '1024x1024'
+        });
+        const tokenResult = await userService.consumeTokens(req.user.id, 4);
+        
+        // Cleanup temp file
+        if (fs.existsSync(uploadedFilePath)) {
+          await aiService.cleanupTempFiles([uploadedFilePath]);
+        }
+        
+        return successResponse(
+          res,
+          {
+            url: result.url,
+            revised_prompt: result.revised_prompt,
+            remainingTokens: tokenResult.remainingTokens
+          },
+          'Görsel başarıyla düzenlendi'
+        );
+      }
 
-      // Token tüket
-      const tokenResult = await userService.consumeTokens(req.user.id, 4);
+      // Add job to queue
+      const job = await queues.aiImageToImage.add(
+        'image-to-image',
+        {
+          imagePath: uploadedFilePath,
+          prompt,
+          options: {
+            size: size || '1024x1024'
+          },
+          userId: req.user.id,
+          tokenAmount: 4,
+        },
+        {
+          timeout: 120000, // 120 seconds timeout
+          attempts: 3,
+        }
+      );
 
-      // Geçici dosyayı sil
-      await aiService.cleanupTempFiles([uploadedFilePath]);
+      // Wait for job to complete
+      const result = await Promise.race([
+        job.waitUntilFinished(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('İşlem zaman aşımına uğradı')), 180000)
+        ),
+      ]);
 
       return successResponse(
         res,
         {
           url: result.url,
           revised_prompt: result.revised_prompt,
-          remainingTokens: tokenResult.remainingTokens
+          remainingTokens: result.remainingTokens
         },
         'Görsel başarıyla düzenlendi'
       );
@@ -182,12 +317,16 @@ class AIController {
 
       logger.error('Image-to-Image error:', error);
       
-      if (error.message.includes('API key')) {
+      if (error.message.includes('API key') || error.message.includes('OpenAI')) {
         return errorResponse(res, 'OpenAI API yapılandırması eksik. Lütfen yönetici ile iletişime geçin.', 503);
       }
 
       if (error.message.includes('Yetersiz token')) {
         return errorResponse(res, error.message, 403);
+      }
+
+      if (error.message.includes('zaman aşımı')) {
+        return errorResponse(res, 'İşlem çok uzun sürdü. Lütfen daha sonra tekrar deneyin.', 408);
       }
 
       next(error);
@@ -225,27 +364,73 @@ class AIController {
 
       logger.info(`Etsy tag isteği: ${productName}`);
 
-      const result = await aiService.generateEtsyTags({
-        productName,
-        productType,
-        keywords,
-        targetAudience,
-        style,
-        color,
-        material,
-        occasion,
-        theme
-      });
+      // Check if queue is available
+      if (!queues.aiGenerateContent) {
+        // Fallback: Process directly
+        logger.warn('Queue not available, processing directly');
+        const result = await aiService.generateEtsyTags({
+          productName,
+          productType,
+          keywords,
+          targetAudience,
+          style,
+          color,
+          material,
+          occasion,
+          theme
+        });
+        const tokenResult = await userService.consumeTokens(req.user.id, 1);
+        
+        return successResponse(
+          res,
+          {
+            tags: result.tags,
+            count: result.count,
+            remainingTokens: tokenResult.remainingTokens
+          },
+          'Taglar başarıyla oluşturuldu'
+        );
+      }
 
-      // Token tüket
-      const tokenResult = await userService.consumeTokens(req.user.id, 1);
+      // Add job to queue
+      const job = await queues.aiGenerateContent.add(
+        'generate-content',
+        {
+          type: 'tags',
+          productInfo: {
+            productName,
+            productType,
+            keywords,
+            targetAudience,
+            style,
+            color,
+            material,
+            occasion,
+            theme
+          },
+          userId: req.user.id,
+          tokenAmount: 1,
+        },
+        {
+          timeout: 60000, // 60 seconds timeout
+          attempts: 3,
+        }
+      );
+
+      // Wait for job to complete
+      const result = await Promise.race([
+        job.waitUntilFinished(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('İşlem zaman aşımına uğradı')), 90000)
+        ),
+      ]);
 
       return successResponse(
         res,
         {
           tags: result.tags,
           count: result.count,
-          remainingTokens: tokenResult.remainingTokens
+          remainingTokens: result.remainingTokens
         },
         'Taglar başarıyla oluşturuldu'
       );
@@ -253,12 +438,16 @@ class AIController {
     } catch (error) {
       logger.error('Generate Etsy Tags error:', error);
       
-      if (error.message.includes('API key')) {
+      if (error.message.includes('API key') || error.message.includes('OpenAI')) {
         return errorResponse(res, 'OpenAI API yapılandırması eksik. Lütfen yönetici ile iletişime geçin.', 503);
       }
 
       if (error.message.includes('Yetersiz token')) {
         return errorResponse(res, error.message, 403);
+      }
+
+      if (error.message.includes('zaman aşımı')) {
+        return errorResponse(res, 'İşlem çok uzun sürdü. Lütfen daha sonra tekrar deneyin.', 408);
       }
 
       next(error);
@@ -295,26 +484,71 @@ class AIController {
 
       logger.info(`Etsy başlık isteği: ${productName}`);
 
-      const result = await aiService.generateEtsyTitle({
-        productName,
-        productType,
-        keywords,
-        targetAudience,
-        style,
-        color,
-        size,
-        occasion
-      });
+      // Check if queue is available
+      if (!queues.aiGenerateContent) {
+        // Fallback: Process directly
+        logger.warn('Queue not available, processing directly');
+        const result = await aiService.generateEtsyTitle({
+          productName,
+          productType,
+          keywords,
+          targetAudience,
+          style,
+          color,
+          size,
+          occasion
+        });
+        const tokenResult = await userService.consumeTokens(req.user.id, 1);
+        
+        return successResponse(
+          res,
+          {
+            titles: result.titles,
+            count: result.count,
+            remainingTokens: tokenResult.remainingTokens
+          },
+          'Başlıklar başarıyla oluşturuldu'
+        );
+      }
 
-      // Token tüket
-      const tokenResult = await userService.consumeTokens(req.user.id, 1);
+      // Add job to queue
+      const job = await queues.aiGenerateContent.add(
+        'generate-content',
+        {
+          type: 'title',
+          productInfo: {
+            productName,
+            productType,
+            keywords,
+            targetAudience,
+            style,
+            color,
+            size,
+            occasion
+          },
+          userId: req.user.id,
+          tokenAmount: 1,
+        },
+        {
+          timeout: 60000,
+          attempts: 3,
+        }
+      );
+
+      // Wait for job to complete
+      const result = await Promise.race([
+        job.waitUntilFinished(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('İşlem zaman aşımına uğradı')), 90000)
+        ),
+      ]);
 
       return successResponse(
         res,
         {
           titles: result.titles,
           count: result.count,
-          remainingTokens: tokenResult.remainingTokens
+          remainingTokens: result.remainingTokens
         },
         'Başlıklar başarıyla oluşturuldu'
       );
@@ -322,12 +556,16 @@ class AIController {
     } catch (error) {
       logger.error('Generate Etsy Title error:', error);
       
-      if (error.message.includes('API key')) {
+      if (error.message.includes('API key') || error.message.includes('OpenAI')) {
         return errorResponse(res, 'OpenAI API yapılandırması eksik. Lütfen yönetici ile iletişime geçin.', 503);
       }
 
       if (error.message.includes('Yetersiz token')) {
         return errorResponse(res, error.message, 403);
+      }
+
+      if (error.message.includes('zaman aşımı')) {
+        return errorResponse(res, 'İşlem çok uzun sürdü. Lütfen daha sonra tekrar deneyin.', 408);
       }
 
       next(error);
@@ -364,19 +602,65 @@ class AIController {
 
       logger.info(`Etsy açıklama isteği: ${productName}`);
 
-      const result = await aiService.generateEtsyDescription({
-        productName,
-        productType,
-        keywords,
-        targetAudience,
-        style,
-        material,
-        features,
-        tone
-      });
+      // Check if queue is available
+      if (!queues.aiGenerateContent) {
+        // Fallback: Process directly
+        logger.warn('Queue not available, processing directly');
+        const result = await aiService.generateEtsyDescription({
+          productName,
+          productType,
+          keywords,
+          targetAudience,
+          style,
+          material,
+          features,
+          tone
+        });
+        const tokenResult = await userService.consumeTokens(req.user.id, 1);
+        
+        return successResponse(
+          res,
+          {
+            description: result.description,
+            characterCount: result.characterCount,
+            wordCount: result.wordCount,
+            remainingTokens: tokenResult.remainingTokens
+          },
+          'Açıklama başarıyla oluşturuldu'
+        );
+      }
 
-      // Token tüket
-      const tokenResult = await userService.consumeTokens(req.user.id, 1);
+      // Add job to queue
+      const job = await queues.aiGenerateContent.add(
+        'generate-content',
+        {
+          type: 'description',
+          productInfo: {
+            productName,
+            productType,
+            keywords,
+            targetAudience,
+            style,
+            material,
+            features,
+            tone
+          },
+          userId: req.user.id,
+          tokenAmount: 1,
+        },
+        {
+          timeout: 90000, // 90 seconds timeout for description (longer text)
+          attempts: 3,
+        }
+      );
+
+      // Wait for job to complete
+      const result = await Promise.race([
+        job.waitUntilFinished(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('İşlem zaman aşımına uğradı')), 120000)
+        ),
+      ]);
 
       return successResponse(
         res,
@@ -384,7 +668,7 @@ class AIController {
           description: result.description,
           characterCount: result.characterCount,
           wordCount: result.wordCount,
-          remainingTokens: tokenResult.remainingTokens
+          remainingTokens: result.remainingTokens
         },
         'Açıklama başarıyla oluşturuldu'
       );
@@ -392,12 +676,16 @@ class AIController {
     } catch (error) {
       logger.error('Generate Etsy Description error:', error);
       
-      if (error.message.includes('API key')) {
+      if (error.message.includes('API key') || error.message.includes('OpenAI')) {
         return errorResponse(res, 'OpenAI API yapılandırması eksik. Lütfen yönetici ile iletişime geçin.', 503);
       }
 
       if (error.message.includes('Yetersiz token')) {
         return errorResponse(res, error.message, 403);
+      }
+
+      if (error.message.includes('zaman aşımı')) {
+        return errorResponse(res, 'İşlem çok uzun sürdü. Lütfen daha sonra tekrar deneyin.', 408);
       }
 
       next(error);
@@ -434,7 +722,12 @@ class AIController {
         return errorResponse(res, 'Lütfen ürün rengini belirtin', 400);
       }
 
-      uploadedFilePath = req.file.path;
+      // Memory storage kullanıldığı için dosyayı geçici olarak disk'e yaz
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const fileExtension = path.extname(req.file.originalname || '.png');
+      uploadedFilePath = path.join(tempDir, `design-${uniqueSuffix}${fileExtension}`);
+      fs.writeFileSync(uploadedFilePath, req.file.buffer);
+      
       logger.info(`Mockup oluşturma isteği: ${productType} - ${productColor}`);
 
       // Mockup oluştur

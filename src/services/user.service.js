@@ -39,15 +39,36 @@ class UserService {
         },
       });
 
-      // Sync to Google Sheets immediately (async, non-blocking)
-      setImmediate(async () => {
-        try {
-          await googleSheetsService.updateUserInSheet(user.email, updates);
-          logger.info(`User ${user.email} profile updated in Google Sheets`);
-        } catch (error) {
-          logger.error('Google Sheets sync failed during profile update:', error);
-        }
-      });
+      // Sync to Google Sheets via queue (async, non-blocking)
+      const { queues } = require('../config/queue');
+      if (queues.googleSheetsSync) {
+        queues.googleSheetsSync.add(
+          'sync-user',
+          {
+            type: 'update-user',
+            data: { email: user.email, updates },
+          },
+          {
+            attempts: 3,
+            backoff: {
+              type: 'exponential',
+              delay: 5000,
+            },
+          }
+        ).catch((error) => {
+          logger.error('Failed to queue Google Sheets sync:', error);
+        });
+      } else {
+        // Fallback to direct sync if queue not available
+        setImmediate(async () => {
+          try {
+            await googleSheetsService.updateUserInSheet(user.email, updates);
+            logger.info(`User ${user.email} profile updated in Google Sheets`);
+          } catch (error) {
+            logger.error('Google Sheets sync failed during profile update:', error);
+          }
+        });
+      }
 
       return formatUser(user);
     } catch (error) {
@@ -106,21 +127,67 @@ class UserService {
     }
   }
 
-  // Consume tokens
+  // Consume tokens (atomic operation to prevent race conditions)
   async consumeTokens(userId, tokenAmount) {
     try {
-      // First check and reset if needed
-      const user = await this.checkAndResetTokens(userId);
+      // Atomic update: Check, reset if needed, and consume in a single database operation
+      // This prevents race conditions when multiple requests try to consume tokens simultaneously
+      const result = await prisma.$executeRaw`
+        UPDATE users 
+        SET 
+          daily_tokens = CASE 
+            -- If last reset was more than 24 hours ago, reset to 40 and then subtract
+            WHEN last_token_reset < NOW() - INTERVAL '24 hours' 
+            THEN 40 - ${tokenAmount}
+            -- Otherwise, just subtract from current tokens
+            ELSE daily_tokens - ${tokenAmount}
+          END,
+          last_token_reset = CASE 
+            -- Update reset time if it was reset
+            WHEN last_token_reset < NOW() - INTERVAL '24 hours' 
+            THEN NOW()
+            ELSE last_token_reset
+          END
+        WHERE id = ${userId}
+          AND (
+            -- Allow if tokens will be reset (more than 24 hours passed)
+            (last_token_reset < NOW() - INTERVAL '24 hours')
+            OR
+            -- Allow if current tokens are sufficient (less than 24 hours passed)
+            (last_token_reset >= NOW() - INTERVAL '24 hours' AND daily_tokens >= ${tokenAmount})
+          )
+      `;
 
-      if (user.dailyTokens < tokenAmount) {
-        throw new Error('Yetersiz token. Günlük token limitinize ulaştınız.');
+      if (result === 0) {
+        // No rows updated means either user doesn't exist or insufficient tokens
+        // Check if user exists first
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { id: true, dailyTokens: true, lastTokenReset: true },
+        });
+
+        if (!user) {
+          throw new Error('Kullanıcı bulunamadı');
+        }
+
+        // Check if it's a reset case
+        const now = new Date();
+        const lastReset = new Date(user.lastTokenReset);
+        const hoursSinceReset = (now - lastReset) / (1000 * 60 * 60);
+        const effectiveTokens = hoursSinceReset >= 24 ? 40 : user.dailyTokens;
+
+        if (effectiveTokens < tokenAmount) {
+          throw new Error('Yetersiz token. Günlük token limitinize ulaştınız.');
+        }
+
+        // This shouldn't happen, but throw generic error
+        throw new Error('Token tüketimi başarısız oldu');
       }
 
-      const updatedUser = await prisma.user.update({
+      // Get updated user to return remaining tokens
+      const updatedUser = await prisma.user.findUnique({
         where: { id: userId },
-        data: {
-          dailyTokens: user.dailyTokens - tokenAmount,
-        },
+        select: { dailyTokens: true },
       });
 
       logger.info(`User ${userId} consumed ${tokenAmount} tokens. Remaining: ${updatedUser.dailyTokens}`);

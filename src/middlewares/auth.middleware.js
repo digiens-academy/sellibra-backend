@@ -1,5 +1,6 @@
 const { prisma } = require('../config/database');
 const { verifyToken, formatUser, errorResponse } = require('../utils/helpers');
+const { cache } = require('../config/redis');
 const subscriptionService = require('../services/subscription.service');
 const logger = require('../utils/logger');
 
@@ -25,17 +26,30 @@ const protect = async (req, res, next) => {
       return errorResponse(res, 'Geçersiz veya süresi dolmuş token', 401);
     }
 
-    // Get user from database
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-    });
+    // Try to get user from cache first
+    const cacheKey = `user:${decoded.id}:profile`;
+    let user = await cache.get(cacheKey);
 
     if (!user) {
-      return errorResponse(res, 'Kullanıcı bulunamadı', 401);
+      // Cache miss - get from database
+      const dbUser = await prisma.user.findUnique({
+        where: { id: decoded.id },
+      });
+
+      if (!dbUser) {
+        return errorResponse(res, 'Kullanıcı bulunamadı', 401);
+      }
+
+      // Format user and cache it
+      user = formatUser(dbUser);
+      // Cache for 5 minutes
+      await cache.set(cacheKey, user, 300);
+    } else {
+      logger.debug(`Auth cache hit for user ${decoded.id}`);
     }
 
     // Attach user to request
-    req.user = formatUser(user);
+    req.user = user;
     next();
   } catch (error) {
     logger.error('Auth middleware error:', error);
@@ -64,8 +78,18 @@ const premiumOnly = async (req, res, next) => {
       return next();
     }
 
-    // Premium subscription kontrolü
-    const hasActivePremium = await subscriptionService.hasActivePremiumSubscription(req.user.id);
+    // Try to get subscription status from cache first
+    const cacheKey = `user:${req.user.id}:subscription`;
+    let hasActivePremium = await cache.get(cacheKey);
+
+    if (hasActivePremium === null) {
+      // Cache miss - check from service (which also uses cache internally)
+      hasActivePremium = await subscriptionService.hasActivePremiumSubscription(req.user.id);
+      // Cache for 1 hour (3600 seconds)
+      await cache.set(cacheKey, hasActivePremium, 3600);
+    } else {
+      logger.debug(`Premium cache hit for user ${req.user.id}`);
+    }
 
     if (!hasActivePremium) {
       return errorResponse(

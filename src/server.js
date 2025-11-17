@@ -2,9 +2,23 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
 const config = require('./config/env');
 const { connectDB } = require('./config/database');
+const { connectRedis } = require('./config/redis');
 const { initializeGoogleSheets } = require('./config/googleSheets');
+// Initialize circuit breakers
+const { initializeCircuitBreakers } = require('./utils/circuitBreaker');
+initializeCircuitBreakers();
+
+// Initialize cleanup cron job
+const { initializeCleanupJob } = require('./jobs/cleanupTempFiles');
+initializeCleanupJob();
+
+// Initialize AI workers (queue processing)
+require('./workers/ai.worker');
+// Initialize Google Sheets sync worker
+require('./workers/sheets.worker');
 const { initializeSuperAdmin } = require('./utils/initAdmin');
 const { errorHandler, notFound } = require('./middlewares/errorHandler.middleware');
 const logger = require('./utils/logger');
@@ -14,6 +28,9 @@ const app = express();
 
 // Connect to database
 connectDB();
+
+// Connect to Redis (non-blocking - app can work without it)
+connectRedis();
 
 // Initialize Google Sheets
 initializeGoogleSheets();
@@ -33,8 +50,20 @@ app.use(cors({
   origin: config.frontendUrl,
   credentials: true,
 }));
-app.use(express.json()); // Parse JSON bodies
-app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
+// Body parser configuration - 10MB limit for file uploads
+app.use(express.json({ limit: '10mb' })); // Parse JSON bodies
+app.use(express.urlencoded({ extended: true, limit: '10mb' })); // Parse URL-encoded bodies
+
+// Request timeout configuration (30 seconds for AI operations)
+app.use((req, res, next) => {
+  req.setTimeout(30000, () => {
+    res.status(408).json({
+      success: false,
+      message: 'İstek zaman aşımına uğradı',
+    });
+  });
+  next();
+});
 
 // Logging
 if (config.nodeEnv === 'development') {
@@ -42,6 +71,66 @@ if (config.nodeEnv === 'development') {
 } else {
   app.use(morgan('combined'));
 }
+
+// Rate Limiting Configuration
+// General API limiter - applies to all API routes
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: {
+    success: false,
+    message: 'Çok fazla istek gönderdiniz, lütfen 15 dakika sonra tekrar deneyin.',
+  },
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/health' || req.path === '/api/health';
+  },
+});
+
+// AI endpoints limiter - stricter limits for resource-intensive operations
+const aiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // Limit each IP to 20 AI requests per 15 minutes
+  message: {
+    success: false,
+    message: 'AI işlemleri için limit aşıldı. Lütfen bir süre bekleyin ve tekrar deneyin.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Auth endpoints limiter - prevent brute force attacks
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 auth requests per 15 minutes
+  message: {
+    success: false,
+    message: 'Çok fazla giriş denemesi. Lütfen 15 dakika sonra tekrar deneyin.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // Don't count successful requests
+});
+
+// Admin endpoints limiter - higher limit for admin operations
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200, // Higher limit for admin operations
+  message: {
+    success: false,
+    message: 'Admin işlemleri için limit aşıldı.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Apply rate limiters
+app.use('/api/', apiLimiter);
+app.use('/api/ai/', aiLimiter);
+app.use('/api/auth/', authLimiter);
+app.use('/api/admin/', adminLimiter);
 
 // Health check endpoints
 app.get('/health', (req, res) => {

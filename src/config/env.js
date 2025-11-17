@@ -25,6 +25,13 @@ const config = {
 
   // Resend (Email)
   resendApiKey: process.env.RESEND_API_KEY,
+
+  // Redis
+  redisHost: process.env.REDIS_HOST || 'localhost',
+  redisPort: process.env.REDIS_PORT || 6379,
+  redisPassword: process.env.REDIS_PASSWORD,
+  redisDb: process.env.REDIS_DB || 0,
+  redisUrl: process.env.REDIS_URL,
 };
 
 // Validate required environment variables

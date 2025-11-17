@@ -1,10 +1,25 @@
 const axios = require('axios');
+const axiosRetry = require('axios-retry');
 const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const logger = require('../utils/logger');
 const config = require('../config/env');
+
+// Configure axios retry for all requests
+axiosRetry(axios, {
+  retries: 3,
+  retryDelay: axiosRetry.exponentialDelay, // Exponential backoff: 100ms, 200ms, 400ms
+  retryCondition: (error) => {
+    // Retry on network errors or 5xx server errors
+    return axiosRetry.isNetworkOrIdempotentRequestError(error) || 
+           (error.response && error.response.status >= 500);
+  },
+  onRetry: (retryCount, error, requestConfig) => {
+    logger.warn(`API request retry ${retryCount}/3: ${requestConfig.url}`);
+  },
+});
 
 class AIService {
   /**
@@ -37,7 +52,8 @@ class AIService {
           ...formData.getHeaders(),
           'X-Api-Key': process.env.REMOVE_BG_API_KEY,
         },
-        responseType: 'arraybuffer'
+        responseType: 'arraybuffer',
+        timeout: 30000, // 30 seconds timeout
       });
 
       logger.info('Arka plan başarıyla kaldırıldı');
@@ -103,7 +119,8 @@ class AIService {
           headers: {
             'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
             'Content-Type': 'application/json'
-          }
+          },
+          timeout: 60000, // 60 seconds timeout for image generation
         }
       );
 
@@ -159,7 +176,8 @@ class AIService {
           headers: {
             ...formData.getHeaders(),
             'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-          }
+          },
+          timeout: 60000, // 60 seconds timeout
         }
       );
 
@@ -261,7 +279,8 @@ Sadece tagleri yaz, her satıra bir tag, numara veya işaret kullanma.`;
           headers: {
             'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
             'Content-Type': 'application/json'
-          }
+          },
+          timeout: 30000, // 30 seconds timeout
         }
       );
 
@@ -357,7 +376,8 @@ Sadece başlıkları yaz, numaralandır (1. 2. 3. vb.)`;
           headers: {
             'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
             'Content-Type': 'application/json'
-          }
+          },
+          timeout: 30000, // 30 seconds timeout
         }
       );
 
@@ -450,7 +470,8 @@ Türkçe olarak, Etsy'de üst sıralara çıkacak şekilde optimize edilmiş bir
           headers: {
             'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
             'Content-Type': 'application/json'
-          }
+          },
+          timeout: 45000, // 45 seconds timeout for longer descriptions
         }
       );
 
@@ -540,7 +561,8 @@ Clean white or minimal background. Photorealistic rendering.`;
           headers: {
             'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
             'Content-Type': 'application/json'
-          }
+          },
+          timeout: 60000, // 60 seconds timeout
         }
       );
 
@@ -548,7 +570,8 @@ Clean white or minimal background. Photorealistic rendering.`;
 
       // Oluşturulan mockup'ı indir
       const imageResponse = await axios.get(mockupUrl, {
-        responseType: 'arraybuffer'
+        responseType: 'arraybuffer',
+        timeout: 30000, // 30 seconds timeout
       });
       const mockupBuffer = Buffer.from(imageResponse.data);
 
