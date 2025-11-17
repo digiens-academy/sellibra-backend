@@ -12,13 +12,25 @@ if (process.env.REDIS_URL) {
   // REDIS_URL format: redis://host:port/db or redis://host:port
   const redisUrl = process.env.REDIS_URL;
   
-  // If URL already contains database number (redis://redis:6379/0), use it directly
-  if (redisUrl.includes('/') && /\d+$/.test(redisUrl.split('/').pop())) {
-    connection = redisUrl;
-  } else if (process.env.REDIS_DB) {
-    // Append database number if not in URL
-    connection = `${redisUrl}/${process.env.REDIS_DB}`;
-  } else {
+  try {
+    // Parse URL to extract components
+    const url = new URL(redisUrl);
+    const dbMatch = url.pathname.match(/^\/(\d+)$/);
+    const db = dbMatch ? parseInt(dbMatch[1], 10) : parseInt(process.env.REDIS_DB || '0', 10);
+    
+    // BullMQ connection as object (more reliable than string)
+    connection = {
+      host: url.hostname,
+      port: parseInt(url.port || '6379', 10),
+      password: url.password || process.env.REDIS_PASSWORD || undefined,
+      db: db,
+      maxRetriesPerRequest: null, // Required for BullMQ
+    };
+    
+    logger.info(`Redis connection configured: ${connection.host}:${connection.port}/${connection.db}`);
+  } catch (error) {
+    // Fallback: use URL string directly
+    logger.warn(`Failed to parse REDIS_URL, using as string: ${error.message}`);
     connection = redisUrl;
   }
 } else {
