@@ -11,28 +11,36 @@ const path = require('path');
  * Helper function to wait for job completion using polling
  * Alternative to job.waitUntilFinished() which requires QueueEvents
  */
-const waitForJobCompletion = async (job, timeoutMs = 180000) => {
+const waitForJobCompletion = async (job, queueName, timeoutMs = 180000) => {
   const startTime = Date.now();
   const pollInterval = 1000; // Check every 1 second
+  const { Queue } = require('bullmq');
+  const { connection } = require('../config/queue');
+  const queue = new Queue(queueName, { connection });
 
   while (Date.now() - startTime < timeoutMs) {
     await new Promise(resolve => setTimeout(resolve, pollInterval));
     
-    // Refresh job data from Redis
-    await job.reload();
-    const state = await job.getState();
+    // Fetch fresh job data from Redis
+    const freshJob = await queue.getJob(job.id);
+    if (!freshJob) {
+      throw new Error('Job not found');
+    }
+    
+    const state = await freshJob.getState();
     
     if (state === 'completed') {
-      // Return the job's return value (not awaited, it's a property)
-      return job.returnvalue;
+      // Return the job's return value
+      return freshJob.returnvalue;
     }
     
     if (state === 'failed') {
-      const failedReason = job.failedReason || 'Job failed';
+      const failedReason = freshJob.failedReason || 'Job failed';
       throw new Error(failedReason);
     }
   }
   
+  await queue.close();
   throw new Error('İşlem zaman aşımına uğradı');
 };
 
@@ -103,13 +111,8 @@ class AIController {
         }
       );
 
-      // Wait for job to complete (with timeout)
-      const result = await Promise.race([
-        job.waitUntilFinished(),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('İşlem zaman aşımına uğradı')), 120000)
-        ),
-      ]);
+      // Wait for job to complete using polling
+      const result = await waitForJobCompletion(job, 'ai-remove-background', 120000);
 
       return successResponse(
         res,
@@ -208,7 +211,7 @@ class AIController {
       );
 
       // Wait for job to complete using polling
-      const result = await waitForJobCompletion(job, 180000);
+      const result = await waitForJobCompletion(job, 'ai-text-to-image', 180000);
 
       return successResponse(
         res,
@@ -316,7 +319,7 @@ class AIController {
       );
 
       // Wait for job to complete using polling
-      const result = await waitForJobCompletion(job, 180000);
+      const result = await waitForJobCompletion(job, 'ai-image-to-image', 180000);
 
       return successResponse(
         res,
@@ -436,13 +439,8 @@ class AIController {
         }
       );
 
-      // Wait for job to complete
-      const result = await Promise.race([
-        job.waitUntilFinished(),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('İşlem zaman aşımına uğradı')), 90000)
-        ),
-      ]);
+      // Wait for job to complete using polling
+      const result = await waitForJobCompletion(job, 'ai-generate-content', 90000);
 
       return successResponse(
         res,
@@ -554,13 +552,8 @@ class AIController {
         }
       );
 
-      // Wait for job to complete
-      const result = await Promise.race([
-        job.waitUntilFinished(),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('İşlem zaman aşımına uğradı')), 90000)
-        ),
-      ]);
+      // Wait for job to complete using polling
+      const result = await waitForJobCompletion(job, 'ai-generate-content', 90000);
 
       return successResponse(
         res,
