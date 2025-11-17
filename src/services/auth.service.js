@@ -22,19 +22,20 @@ class AuthService {
         throw new Error('Bu e-posta adresi zaten kayıtlı');
       }
 
-      // Etsy mağaza URL'si zorunlu kontrol
-      if (!userData.etsyStoreUrl || userData.etsyStoreUrl.trim() === '') {
-        throw new Error('Etsy mağaza URL\'si zorunludur');
+      // Etsy mağaza URL'si opsiyonel (30 Kasım 2025'e kadar girilebilir)
+      let normalizedEtsyUrl = null;
+      if (userData.etsyStoreUrl && userData.etsyStoreUrl.trim() !== '') {
+        // Normalize edilmiş URL'yi kaydet (doğrulama yapılmıyor)
+        normalizedEtsyUrl = etsyService.normalizeEtsyUrl(userData.etsyStoreUrl);
+        
+        if (!normalizedEtsyUrl) {
+          throw new Error('Geçersiz Etsy mağaza URL formatı');
+        }
+        
+        logger.info(`Etsy mağaza URL kaydediliyor: ${normalizedEtsyUrl} (${userData.email})`);
+      } else {
+        logger.info(`Etsy mağaza URL girilmeden kayıt yapılıyor: ${userData.email}`);
       }
-
-      // Normalize edilmiş URL'yi kaydet (doğrulama yapılmıyor)
-      const normalizedEtsyUrl = etsyService.normalizeEtsyUrl(userData.etsyStoreUrl);
-      
-      if (!normalizedEtsyUrl) {
-        throw new Error('Geçersiz Etsy mağaza URL formatı');
-      }
-      
-      logger.info(`Etsy mağaza URL kaydediliyor: ${normalizedEtsyUrl} (${userData.email})`);
 
       // Hash password
       const hashedPassword = await bcrypt.hash(userData.password, 10);
@@ -65,20 +66,24 @@ class AuthService {
           },
         });
 
-        // Add Etsy store to etsy_stores table (within same transaction)
-        try {
-          await tx.etsyStore.create({
-            data: {
-              userId: newUser.id,
-              storeUrl: normalizedEtsyUrl,
-              storeName: null,
-            },
-          });
-          logger.info(`✅ Etsy store added to etsy_stores table for user ${newUser.email}`);
-        } catch (error) {
-          logger.error('Failed to add store to etsy_stores table during registration:', error);
-          // Transaction will rollback if this fails
-          throw error;
+        // Add Etsy store to etsy_stores table (within same transaction) - only if URL provided
+        if (normalizedEtsyUrl) {
+          try {
+            await tx.etsyStore.create({
+              data: {
+                userId: newUser.id,
+                storeUrl: normalizedEtsyUrl,
+                storeName: null,
+              },
+            });
+            logger.info(`✅ Etsy store added to etsy_stores table for user ${newUser.email}`);
+          } catch (error) {
+            logger.error('Failed to add store to etsy_stores table during registration:', error);
+            // Transaction will rollback if this fails
+            throw error;
+          }
+        } else {
+          logger.info(`⚠️ No Etsy store URL provided for user ${newUser.email}, skipping store creation`);
         }
 
         return newUser;
