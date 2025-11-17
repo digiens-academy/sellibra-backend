@@ -124,36 +124,15 @@ class AuthService {
         },
       });
 
-      // Sync to Google Sheets via queue (async, non-blocking)
-      const { queues } = require('../config/queue');
-      if (queues.googleSheetsSync) {
-        queues.googleSheetsSync.add(
-          'sync-user',
-          {
-            type: 'append-user',
-            data: { user: updatedUser || user },
-          },
-          {
-            attempts: 3,
-            backoff: {
-              type: 'exponential',
-              delay: 5000,
-            },
-          }
-        ).catch((error) => {
-          logger.error('Failed to queue Google Sheets sync:', error);
-        });
-      } else {
-        // Fallback to direct sync if queue not available
-        setImmediate(async () => {
-          try {
-            await googleSheetsService.appendUserToSheet(updatedUser || user);
-            logger.info(`User ${user.email} synced to Google Sheets`);
-          } catch (error) {
-            logger.error('Google Sheets sync failed during registration:', error);
-          }
-        });
-      }
+      // Sync to Google Sheets (async, non-blocking) - direct sync without queue
+      setImmediate(async () => {
+        try {
+          await googleSheetsService.appendUserToSheet(updatedUser || user);
+          logger.info(`User ${user.email} synced to Google Sheets`);
+        } catch (error) {
+          logger.error('Google Sheets sync failed during registration:', error);
+        }
+      });
 
       return {
         user: formatUser(updatedUser || user),

@@ -39,36 +39,15 @@ class UserService {
         },
       });
 
-      // Sync to Google Sheets via queue (async, non-blocking)
-      const { queues } = require('../config/queue');
-      if (queues.googleSheetsSync) {
-        queues.googleSheetsSync.add(
-          'sync-user',
-          {
-            type: 'update-user',
-            data: { email: user.email, updates },
-          },
-          {
-            attempts: 3,
-            backoff: {
-              type: 'exponential',
-              delay: 5000,
-            },
-          }
-        ).catch((error) => {
-          logger.error('Failed to queue Google Sheets sync:', error);
-        });
-      } else {
-        // Fallback to direct sync if queue not available
-        setImmediate(async () => {
-          try {
-            await googleSheetsService.updateUserInSheet(user.email, updates);
-            logger.info(`User ${user.email} profile updated in Google Sheets`);
-          } catch (error) {
-            logger.error('Google Sheets sync failed during profile update:', error);
-          }
-        });
-      }
+      // Sync to Google Sheets (async, non-blocking) - direct sync without queue
+      setImmediate(async () => {
+        try {
+          await googleSheetsService.updateUserInSheet(user.email, updates);
+          logger.info(`User ${user.email} profile updated in Google Sheets`);
+        } catch (error) {
+          logger.error('Google Sheets sync failed during profile update:', error);
+        }
+      });
 
       return formatUser(user);
     } catch (error) {
