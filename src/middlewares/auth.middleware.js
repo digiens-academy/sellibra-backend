@@ -1,7 +1,6 @@
 const { prisma } = require('../config/database');
 const { verifyToken, formatUser, errorResponse } = require('../utils/helpers');
 const subscriptionService = require('../services/subscription.service');
-const cacheService = require('../services/cache.service');
 const logger = require('../utils/logger');
 
 // Protect routes - require authentication
@@ -19,12 +18,6 @@ const protect = async (req, res, next) => {
   }
 
   try {
-    // Check if token is blacklisted
-    const isBlacklisted = await cacheService.isTokenBlacklisted(token);
-    if (isBlacklisted) {
-      return errorResponse(res, 'Token geçersiz. Lütfen tekrar giriş yapınız', 401);
-    }
-
     // Verify token
     const decoded = verifyToken(token);
 
@@ -32,28 +25,17 @@ const protect = async (req, res, next) => {
       return errorResponse(res, 'Geçersiz veya süresi dolmuş token', 401);
     }
 
-    // Try to get user from cache first
-    let user = await cacheService.getUserCache(decoded.id);
+    // Get user from database
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+    });
 
-    // If not in cache, get from database and cache it
     if (!user) {
-      user = await prisma.user.findUnique({
-        where: { id: decoded.id },
-      });
-
-      if (!user) {
-        return errorResponse(res, 'Kullanıcı bulunamadı', 401);
-      }
-
-      // Cache user for 5 minutes
-      const formattedUser = formatUser(user);
-      await cacheService.setUserCache(decoded.id, formattedUser);
-      req.user = formattedUser;
-    } else {
-      // User from cache
-      req.user = user;
+      return errorResponse(res, 'Kullanıcı bulunamadı', 401);
     }
 
+    // Attach user to request
+    req.user = formatUser(user);
     next();
   } catch (error) {
     logger.error('Auth middleware error:', error);
