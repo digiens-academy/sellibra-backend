@@ -3,23 +3,46 @@ const config = require('./env');
 const logger = require('../utils/logger');
 
 // Redis connection configuration
-const redisConfig = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: process.env.REDIS_PORT || 6379,
-  password: process.env.REDIS_PASSWORD || undefined,
-  db: process.env.REDIS_DB || 0,
-  retryStrategy: (times) => {
-    const delay = Math.min(times * 50, 2000);
-    return delay;
-  },
-  maxRetriesPerRequest: 3,
-  enableReadyCheck: true,
-  enableOfflineQueue: false,
-  connectTimeout: 10000,
-  lazyConnect: true,
-};
+// Support both REDIS_URL and individual REDIS_HOST/REDIS_PORT
+// For multi-project setup: Use different database numbers (0-15) or key prefixes
+let redisConfig;
+
+if (process.env.REDIS_URL) {
+  // Use REDIS_URL if provided (e.g., redis://redis:6379 or redis://localhost:6379)
+  // Database can be specified in URL: redis://localhost:6379/1
+  const redisUrl = process.env.REDIS_URL;
+  
+  // If REDIS_DB is specified separately, append it to URL
+  if (process.env.REDIS_DB && !redisUrl.includes('/')) {
+    redisConfig = `${redisUrl}/${process.env.REDIS_DB}`;
+  } else {
+    redisConfig = redisUrl;
+  }
+} else {
+  // Use individual settings
+  redisConfig = {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT || '6379', 10),
+    password: process.env.REDIS_PASSWORD || undefined,
+    db: parseInt(process.env.REDIS_DB || '0', 10), // Default: database 0, use 1-15 for other projects
+    retryStrategy: (times) => {
+      const delay = Math.min(times * 50, 2000);
+      return delay;
+    },
+    maxRetriesPerRequest: 3,
+    enableReadyCheck: true,
+    enableOfflineQueue: false,
+    connectTimeout: 10000,
+    lazyConnect: true,
+  };
+}
+
+// Key prefix for this project (to avoid conflicts with other projects)
+const REDIS_KEY_PREFIX = process.env.REDIS_KEY_PREFIX || 'sellibra:';
 
 // Create Redis client
+// If REDIS_URL is a string, ioredis will parse it automatically
+// If it's an object, use it as config
 const redis = new Redis(redisConfig);
 
 // Redis connection event handlers
@@ -66,12 +89,23 @@ process.on('beforeExit', async () => {
   }
 });
 
+// Helper function to add prefix to keys
+const addPrefix = (key) => {
+  return key.startsWith(REDIS_KEY_PREFIX) ? key : `${REDIS_KEY_PREFIX}${key}`;
+};
+
+// Helper function to remove prefix from keys (for pattern matching)
+const addPrefixToPattern = (pattern) => {
+  return pattern.startsWith(REDIS_KEY_PREFIX) ? pattern : `${REDIS_KEY_PREFIX}${pattern}`;
+};
+
 // Helper functions for cache operations
 const cache = {
   // Get value from cache
   get: async (key) => {
     try {
-      const value = await redis.get(key);
+      const prefixedKey = addPrefix(key);
+      const value = await redis.get(prefixedKey);
       return value ? JSON.parse(value) : null;
     } catch (error) {
       logger.error(`Redis get error for key ${key}:`, error.message);
@@ -82,7 +116,8 @@ const cache = {
   // Set value in cache with TTL
   set: async (key, value, ttlSeconds = 300) => {
     try {
-      await redis.setex(key, ttlSeconds, JSON.stringify(value));
+      const prefixedKey = addPrefix(key);
+      await redis.setex(prefixedKey, ttlSeconds, JSON.stringify(value));
       return true;
     } catch (error) {
       logger.error(`Redis set error for key ${key}:`, error.message);
@@ -93,7 +128,8 @@ const cache = {
   // Delete value from cache
   del: async (key) => {
     try {
-      await redis.del(key);
+      const prefixedKey = addPrefix(key);
+      await redis.del(prefixedKey);
       return true;
     } catch (error) {
       logger.error(`Redis del error for key ${key}:`, error.message);
@@ -104,8 +140,9 @@ const cache = {
   // Delete multiple keys matching pattern
   delPattern: async (pattern) => {
     try {
+      const prefixedPattern = addPrefixToPattern(pattern);
       const stream = redis.scanStream({
-        match: pattern,
+        match: prefixedPattern,
         count: 100,
       });
 
@@ -132,7 +169,8 @@ const cache = {
   // Check if key exists
   exists: async (key) => {
     try {
-      const result = await redis.exists(key);
+      const prefixedKey = addPrefix(key);
+      const result = await redis.exists(prefixedKey);
       return result === 1;
     } catch (error) {
       logger.error(`Redis exists error for key ${key}:`, error.message);
@@ -143,7 +181,8 @@ const cache = {
   // Get TTL of a key
   ttl: async (key) => {
     try {
-      return await redis.ttl(key);
+      const prefixedKey = addPrefix(key);
+      return await redis.ttl(prefixedKey);
     } catch (error) {
       logger.error(`Redis ttl error for key ${key}:`, error.message);
       return -1;
