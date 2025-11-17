@@ -7,6 +7,32 @@ const logger = require('../utils/logger');
 const fs = require('fs');
 const path = require('path');
 
+/**
+ * Helper function to wait for job completion using polling
+ * Alternative to job.waitUntilFinished() which requires QueueEvents
+ */
+const waitForJobCompletion = async (job, timeoutMs = 180000) => {
+  const startTime = Date.now();
+  const pollInterval = 1000; // Check every 1 second
+
+  while (Date.now() - startTime < timeoutMs) {
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+    
+    const state = await job.getState();
+    
+    if (state === 'completed') {
+      return await job.returnvalue;
+    }
+    
+    if (state === 'failed') {
+      const failedReason = job.failedReason || 'Job failed';
+      throw new Error(failedReason);
+    }
+  }
+  
+  throw new Error('İşlem zaman aşımına uğradı');
+};
+
 class AIController {
   /**
    * @route   POST /api/ai/remove-background
@@ -178,13 +204,8 @@ class AIController {
         }
       );
 
-      // Wait for job to complete
-      const result = await Promise.race([
-        job.waitUntilFinished(),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('İşlem zaman aşımına uğradı')), 180000)
-        ),
-      ]);
+      // Wait for job to complete using polling
+      const result = await waitForJobCompletion(job, 180000);
 
       return successResponse(
         res,
@@ -291,13 +312,8 @@ class AIController {
         }
       );
 
-      // Wait for job to complete
-      const result = await Promise.race([
-        job.waitUntilFinished(),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('İşlem zaman aşımına uğradı')), 180000)
-        ),
-      ]);
+      // Wait for job to complete using polling
+      const result = await waitForJobCompletion(job, 180000);
 
       return successResponse(
         res,
