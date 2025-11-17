@@ -18,10 +18,13 @@ const waitForJobCompletion = async (job, timeoutMs = 180000) => {
   while (Date.now() - startTime < timeoutMs) {
     await new Promise(resolve => setTimeout(resolve, pollInterval));
     
+    // Refresh job data from Redis
+    await job.reload();
     const state = await job.getState();
     
     if (state === 'completed') {
-      return await job.returnvalue;
+      // Return the job's return value (not awaited, it's a property)
+      return job.returnvalue;
     }
     
     if (state === 'failed') {
