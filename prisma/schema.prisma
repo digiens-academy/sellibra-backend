@@ -35,6 +35,7 @@ model User {
   printNestSessions   PrintNestSession[]
   googleSheetsSyncLog GoogleSheetsSyncLog[]
   etsyStores          EtsyStore[]
+  announcements       Announcement[]
 
   @@map("users")
 }
@@ -105,5 +106,30 @@ model SystemSettings {
   updatedAt                 DateTime @updatedAt @map("updated_at")
   
   @@map("system_settings")
+}
+
+// Announcements table
+model Announcement {
+  id          Int       @id @default(autoincrement())
+  title       String    @db.VarChar(255)
+  content     String    @db.Text
+  isActive    Boolean   @default(true) @map("is_active")
+  priority    String    @default("normal") // "low", "normal", "high"
+  type        String    @default("info") // "info", "success", "warning", "error"
+  startDate   DateTime? @map("start_date")
+  endDate     DateTime? @map("end_date")
+  createdBy   Int       @map("created_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  creator User @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  
+  @@index([isActive])
+  @@index([priority])
+  @@index([createdBy])
+  @@index([startDate])
+  @@index([endDate])
+  @@map("announcements")
 }
 

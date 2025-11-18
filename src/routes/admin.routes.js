@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/admin.controller');
+const announcementController = require('../controllers/announcement.controller');
 const { protect, adminOnly } = require('../middlewares/auth.middleware');
 const validators = require('../utils/validators');
 
@@ -34,6 +35,15 @@ router.get('/sync-logs', adminController.getSyncLogs);
 // System settings
 router.get('/settings', adminController.getSettings);
 router.put('/settings', adminController.updateSetting);
+
+// Announcements management
+router.get('/announcements/stats', announcementController.getAnnouncementStats);
+router.get('/announcements', announcementController.getAllAnnouncements);
+router.get('/announcements/:id', announcementController.getAnnouncementById);
+router.post('/announcements', announcementController.createAnnouncement);
+router.put('/announcements/:id', announcementController.updateAnnouncement);
+router.patch('/announcements/:id/toggle', announcementController.toggleAnnouncementStatus);
+router.delete('/announcements/:id', announcementController.deleteAnnouncement);
 
 module.exports = router;
 

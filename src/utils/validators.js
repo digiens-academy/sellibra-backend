@@ -37,7 +37,7 @@ const validators = {
       .withMessage('E-posta alanı zorunludur')
       .isEmail()
       .withMessage('Geçerli bir e-posta adresi giriniz')
-      .normalizeEmail(),
+      .normalizeEmail({ gmail_remove_dots: false }),
     body('phoneNumber')
       .trim()
       .notEmpty()
@@ -76,7 +76,7 @@ const validators = {
       .withMessage('E-posta alanı zorunludur')
       .isEmail()
       .withMessage('Geçerli bir e-posta adresi giriniz')
-      .normalizeEmail(),
+      .normalizeEmail({ gmail_remove_dots: false }),
     body('password').notEmpty().withMessage('Şifre alanı zorunludur'),
     validate,
   ],
