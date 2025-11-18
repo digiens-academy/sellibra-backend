@@ -15,7 +15,7 @@ RUN apt-get update \
  && npm ci
 
 # (2) Prisma Client üret (Debian/glibc hedefi)
-RUN npx prisma generate --schema=./prisma/schema.prisma --platform=linux-x64 || true
+RUN npx prisma generate
 
 
 # (3) Uygulama kodunu kopyala
@@ -38,20 +38,29 @@ ENV NODE_ENV=production
 # Non-root kullanıcı oluştur (Debian komutları)
 RUN groupadd -g 1001 nodejs && useradd -u 1001 -g 1001 -M -s /usr/sbin/nologin nodejs
 
-# Builder'dan artefact'lar
+# Builder'dan artefact'lar (Prisma Client dahil)
 COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nodejs:nodejs /app/prisma ./prisma
 COPY --chown=nodejs:nodejs . .
 
+# Prisma Client'ı tekrar generate et (runtime'da güncel olduğundan emin olmak için)
+USER root
+RUN npx prisma generate
+USER nodejs
+
 # Upload klasörleri
 RUN mkdir -p /app/uploads/temp && chown -R nodejs:nodejs /app/uploads
+
+# Entrypoint script
+COPY docker-entrypoint.sh /app/
+RUN chmod +x /app/docker-entrypoint.sh && chown nodejs:nodejs /app/docker-entrypoint.sh
 
 USER nodejs
 EXPOSE 5000
 
-# (İsteğe bağlı) healthcheck yolunu app’ine göre sabitle (örn. /health)
-# HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-#   CMD node -e "require('http').get('http://localhost:5000/health', r => process.exit(r.statusCode===200?0:1))"
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:5000/health', r => process.exit(r.statusCode===200?0:1))"
 
-ENTRYPOINT ["dumb-init","--"]
+ENTRYPOINT ["dumb-init","--","/app/docker-entrypoint.sh"]
 CMD ["node","src/server.js"]

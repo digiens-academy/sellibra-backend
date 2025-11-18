@@ -1,18 +1,62 @@
+# Node modules
 node_modules
 npm-debug.log
-.env*
+yarn-error.log
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Git
 .git
 .gitignore
-README.md
-.DS_Store
+.gitattributes
+
+# Documentation
 *.md
+!README.md
+docs/
+
+# Logs
+logs
+*.log
+*.log.*
+
+# Uploads (don't copy to build, volume will be mounted)
 uploads/*
 !uploads/.gitkeep
+
+# IDE
 .vscode
 .idea
-*.log
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
 coverage
 .nyc_output
-dist
-build
 
+# Temp files
+tmp
+temp
+*.tmp
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# CI/CD
+.github
+.gitlab-ci.yml
+
+# Misc
+.editorconfig
+.eslintrc*
+.prettierrc*
