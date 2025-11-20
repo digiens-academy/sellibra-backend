@@ -667,12 +667,7 @@ class AIController {
       );
 
       // Wait for job to complete
-      const result = await Promise.race([
-        job.waitUntilFinished(),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('İşlem zaman aşımına uğradı')), 120000)
-        ),
-      ]);
+      const result = await waitForJobCompletion(job, 'ai-generate-content', 120000);
 
       return successResponse(
         res,
