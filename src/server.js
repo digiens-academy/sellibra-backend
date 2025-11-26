@@ -23,6 +23,11 @@ const { initializeSuperAdmin } = require('./utils/initAdmin');
 const { errorHandler, notFound } = require('./middlewares/errorHandler.middleware');
 const logger = require('./utils/logger');
 
+// Initialize PrintNest confirmation sync cron job (5 dakikada bir) - AFTER logger
+const syncPrintNestConfirmationJob = require('./jobs/syncPrintNestConfirmation');
+syncPrintNestConfirmationJob.start();
+logger.info('🔄 PrintNest confirmation sync cron job initialized (runs every 5 minutes)');
+
 // Initialize Express app
 const app = express();
 

@@ -23,7 +23,7 @@ model User {
   hasActiveSubscription   Boolean  @default(false) @map("has_active_subscription")
   subscriptionCheckedAt   DateTime? @map("subscription_checked_at")
   registeredAt            DateTime @default(now()) @map("registered_at")
-  printNestConfirmed      Boolean  @default(false) @map("printnest_confirmed")
+  printNestConfirmed      Boolean  @default(false) @map("printnest_confirmed") // J sütunu (DEPO İNDİRİM TANIMLADI) ile güncellenir
   dailyTokens             Int      @default(40) @map("daily_tokens")
   lastTokenReset          DateTime @default(now()) @map("last_token_reset")
   resetToken              String?  @map("reset_token")

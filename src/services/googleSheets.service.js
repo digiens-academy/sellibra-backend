@@ -477,6 +477,7 @@ class GoogleSheetsService {
         }
       }
 
+
       // If no changes, skip update
       if (Object.keys(updateData).length === 0) {
         logger.info(`ℹ️ No changes detected for user: ${email}`);
@@ -500,6 +501,98 @@ class GoogleSheetsService {
       };
     } catch (error) {
       logger.error('❌ Error processing sheet update:', error.message);
+      return { success: false, message: error.message };
+    }
+  }
+
+  // Sync PrintNest Confirmation from J column (DEPO İNDİRİM TANIMLADI) - CRON JOB
+  // J sütunundaki EVET/HAYIR değerine göre printnest_confirmed güncellenir
+  async syncPrintNestConfirmationFromSheet() {
+    const sheets = getSheetsClient();
+    
+    if (!sheets) {
+      logger.warn('Google Sheets not initialized, skipping PrintNest confirmation sync');
+      return { success: false, message: 'Google Sheets not configured' };
+    }
+
+    try {
+      const sheetName = await this.getSheetName();
+      
+      // Get all data (A to J columns)
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: `${sheetName}!A:J`,
+      });
+
+      const rows = response.data.values;
+      if (!rows || rows.length <= 1) {
+        logger.info('No data in Google Sheets to sync');
+        return { success: true, message: 'Sheet\'te senkronize edilecek veri yok' };
+      }
+
+      let updatedCount = 0;
+      let skippedCount = 0;
+      const errors = [];
+
+      // Process rows (skip header)
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const email = row[2]; // Column C (email)
+        const depoIndirimValue = row[9]; // Column J (DEPO İNDİRİM TANIMLADI)
+
+        if (!email) {
+          skippedCount++;
+          continue;
+        }
+
+        try {
+          // Find user by email
+          const user = await prisma.user.findUnique({
+            where: { email: email.trim().toLowerCase() },
+          });
+
+          if (!user) {
+            skippedCount++;
+            continue;
+          }
+
+          // Convert J column value to boolean
+          // EVET = true (onaylı), empty/HAYIR = false (onaysız)
+          const isPrintNestConfirmed = depoIndirimValue === 'EVET';
+
+          // Update only if changed
+          if (user.printNestConfirmed !== isPrintNestConfirmed) {
+            await prisma.user.update({
+              where: { email: email.trim().toLowerCase() },
+              data: { printNestConfirmed: isPrintNestConfirmed },
+            });
+
+            updatedCount++;
+            logger.info(`✅ Updated printNestConfirmed for ${email}: ${isPrintNestConfirmed}`);
+          } else {
+            skippedCount++;
+          }
+        } catch (error) {
+          errors.push(`Satır ${i + 1} (${email}): ${error.message}`);
+          logger.error(`Error updating user ${email}:`, error.message);
+        }
+      }
+
+      // Log sync
+      await this.logSync(null, 'printnest_confirmation_sync', 'success', null);
+
+      logger.info(`🔄 PrintNest Confirmation Sync completed: ${updatedCount} updated, ${skippedCount} skipped`);
+      
+      return { 
+        success: true, 
+        message: `${updatedCount} kullanıcı güncellendi, ${skippedCount} atlandı`,
+        updated: updatedCount,
+        skipped: skippedCount,
+        errors: errors.length > 0 ? errors : undefined
+      };
+    } catch (error) {
+      logger.error('❌ Error syncing PrintNest confirmation from Google Sheets:', error.message);
+      await this.logSync(null, 'printnest_confirmation_sync', 'failed', error.message);
       return { success: false, message: error.message };
     }
   }
