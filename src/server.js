@@ -15,6 +15,10 @@ initializeCircuitBreakers();
 const { initializeCleanupJob } = require('./jobs/cleanupTempFiles');
 initializeCleanupJob();
 
+// Initialize Sheet to DB sync cron job (her 5 dakikada bir)
+const { initializeSheetSyncJob } = require('./jobs/syncSheetToDB');
+initializeSheetSyncJob();
+
 // Initialize AI workers (queue processing)
 require('./workers/ai.worker');
 // Initialize Google Sheets sync worker
@@ -22,6 +26,11 @@ require('./workers/sheets.worker');
 const { initializeSuperAdmin } = require('./utils/initAdmin');
 const { errorHandler, notFound } = require('./middlewares/errorHandler.middleware');
 const logger = require('./utils/logger');
+
+// Initialize PrintNest confirmation sync cron job (5 dakikada bir) - AFTER logger
+const syncPrintNestConfirmationJob = require('./jobs/syncPrintNestConfirmation');
+syncPrintNestConfirmationJob.start();
+logger.info('🔄 PrintNest confirmation sync cron job initialized (runs every 5 minutes)');
 
 // Initialize Express app
 const app = express();
