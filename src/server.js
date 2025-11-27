@@ -15,6 +15,10 @@ initializeCircuitBreakers();
 const { initializeCleanupJob } = require('./jobs/cleanupTempFiles');
 initializeCleanupJob();
 
+// Initialize Sheet to DB sync cron job (her 5 dakikada bir)
+const { initializeSheetSyncJob } = require('./jobs/syncSheetToDB');
+initializeSheetSyncJob();
+
 // Initialize AI workers (queue processing)
 require('./workers/ai.worker');
 // Initialize Google Sheets sync worker
