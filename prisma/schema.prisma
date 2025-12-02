@@ -18,7 +18,7 @@ model User {
   password            String?  // Nullable - users from Google Sheets can use "Forgot Password"
   phoneNumber         String?  @map("phone_number")
   etsyStoreUrl        String?  @map("etsy_store_url")
-  role                    String   @default("user") // "user" or "admin"
+  role                    String   @default("user") // "user", "admin" or "support"
   isSuperAdmin            Boolean  @default(false) @map("is_super_admin") // Super admin cannot be deleted
   hasActiveSubscription   Boolean  @default(false) @map("has_active_subscription")
   subscriptionCheckedAt   DateTime? @map("subscription_checked_at")
@@ -105,5 +105,23 @@ model SystemSettings {
   updatedAt                 DateTime @updatedAt @map("updated_at")
   
   @@map("system_settings")
+}
+
+// Announcements table (Bildirimler/Duyurular)
+model Announcement {
+  id              Int       @id @default(autoincrement())
+  title           String    // Bildirim başlığı
+  message         String    @db.Text // Bildirim mesajı
+  type            String    @default("info") // "info", "warning", "success", "error"
+  isActive        Boolean   @default(true) @map("is_active") // Yayında mı?
+  startDate       DateTime  @map("start_date") // Başlama tarihi
+  endDate         DateTime  @map("end_date") // Bitiş tarihi
+  createdBy       Int       @map("created_by") // Oluşturan kullanıcı ID'si
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  
+  @@index([isActive])
+  @@index([startDate, endDate])
+  @@map("announcements")
 }
 

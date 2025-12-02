@@ -1,39 +1,34 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/admin.controller');
-const { protect, adminOnly } = require('../middlewares/auth.middleware');
+const { protect, adminOnly, adminOrSupport } = require('../middlewares/auth.middleware');
 const validators = require('../utils/validators');
 
 // Public webhook endpoint (protected with secret token in controller)
 // This must be BEFORE the middleware below
 router.post('/sheets-webhook', adminController.handleSheetsWebhook);
 
-// All routes below are protected and admin only
-router.use(protect, adminOnly);
+// Protected routes - accessible by both admin and support (read-only for support)
+router.get('/users', protect, adminOrSupport, adminController.getUsers);
+router.get('/users/:id', protect, adminOrSupport, validators.userId, adminController.getUserById);
+router.get('/stats', protect, adminOrSupport, adminController.getStats);
+router.get('/settings', protect, adminOrSupport, adminController.getSettings);
+router.get('/printnest-sessions', protect, adminOrSupport, adminController.getPrintNestSessions);
+router.get('/sync-logs', protect, adminOrSupport, adminController.getSyncLogs);
 
-// User management
-router.get('/users', adminController.getUsers);
-router.get('/users/:id', validators.userId, adminController.getUserById);
-router.put('/users/:id/confirm-printnest', validators.userId, adminController.confirmPrintNest);
-router.put('/users/:id/role', validators.userId, adminController.updateUserRole);
-router.put('/users/:id/tokens', validators.userId, adminController.updateUserTokens);
-router.post('/users/:id/reset-tokens', validators.userId, adminController.resetUserTokens);
-router.delete('/users/:id', validators.userId, adminController.deleteUser);
+// Admin-only routes (write operations)
+router.put('/users/:id/confirm-printnest', protect, adminOnly, validators.userId, adminController.confirmPrintNest);
+router.put('/users/:id/role', protect, adminOnly, validators.userId, adminController.updateUserRole);
+router.put('/users/:id/tokens', protect, adminOnly, validators.userId, adminController.updateUserTokens);
+router.post('/users/:id/reset-tokens', protect, adminOnly, validators.userId, adminController.resetUserTokens);
+router.delete('/users/:id', protect, adminOnly, validators.userId, adminController.deleteUser);
 
-// PrintNest sessions
-router.get('/printnest-sessions', adminController.getPrintNestSessions);
+// Google Sheets sync - admin only
+router.post('/sync-to-sheets', protect, adminOnly, adminController.syncToSheets);
+router.post('/import-from-sheets', protect, adminOnly, adminController.importFromSheets);
 
-// Stats
-router.get('/stats', adminController.getStats);
-
-// Google Sheets sync
-router.post('/sync-to-sheets', adminController.syncToSheets);
-router.post('/import-from-sheets', adminController.importFromSheets);
-router.get('/sync-logs', adminController.getSyncLogs);
-
-// System settings
-router.get('/settings', adminController.getSettings);
-router.put('/settings', adminController.updateSetting);
+// System settings update - admin only
+router.put('/settings', protect, adminOnly, adminController.updateSetting);
 
 module.exports = router;
 
