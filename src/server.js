@@ -173,6 +173,7 @@ app.use('/api/printnest', require('./routes/printnest.routes'));
 app.use('/api/admin', require('./routes/admin.routes'));
 app.use('/api/ai', require('./routes/ai.routes'));
 app.use('/api/etsy-stores', require('./routes/etsyStore.routes'));
+app.use('/api/announcements', require('./routes/announcement.routes'));
 
 // 404 handler
 app.use(notFound);

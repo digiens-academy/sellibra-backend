@@ -85,8 +85,8 @@ class AdminController {
       const userId = parseInt(req.params.id);
       const { role } = req.body;
 
-      if (!role || !['user', 'admin'].includes(role)) {
-        return errorResponse(res, 'Geçersiz rol. Sadece "user" veya "admin" olabilir', 400);
+      if (!role || !['user', 'admin', 'support'].includes(role)) {
+        return errorResponse(res, 'Geçersiz rol. Sadece "user", "admin" veya "support" olabilir', 400);
       }
 
       const user = await adminService.updateUserRole(userId, role);

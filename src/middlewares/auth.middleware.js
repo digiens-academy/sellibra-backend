@@ -66,6 +66,24 @@ const adminOnly = (req, res, next) => {
   }
 };
 
+// Admin or Support middleware (Destek rolü ve admin erişebilir)
+const adminOrSupport = (req, res, next) => {
+  if (req.user && (req.user.role === 'admin' || req.user.role === 'support')) {
+    next();
+  } else {
+    return errorResponse(res, 'Bu işlem için admin veya destek yetkisi gereklidir', 403);
+  }
+};
+
+// Support only middleware (Sadece destek rolü - salt okunur kullanıcı listesi için)
+const supportOnly = (req, res, next) => {
+  if (req.user && req.user.role === 'support') {
+    next();
+  } else {
+    return errorResponse(res, 'Bu işlem için destek yetkisi gereklidir', 403);
+  }
+};
+
 // Premium subscription middleware (Etsy-AI tools için)
 const premiumOnly = async (req, res, next) => {
   try {
@@ -106,5 +124,5 @@ const premiumOnly = async (req, res, next) => {
   }
 };
 
-module.exports = { protect, adminOnly, premiumOnly };
+module.exports = { protect, adminOnly, adminOrSupport, supportOnly, premiumOnly };
 
