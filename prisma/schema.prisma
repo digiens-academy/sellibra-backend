@@ -117,6 +117,15 @@ model Announcement {
   startDate       DateTime  @map("start_date") // Başlama tarihi
   endDate         DateTime  @map("end_date") // Bitiş tarihi
   createdBy       Int       @map("created_by") // Oluşturan kullanıcı ID'si
+  targetAudience  Json?     @map("target_audience") // Hedef kitle kuralları (null = herkese göster)
+  // targetAudience örneği:
+  // {
+  //   "roles": ["admin", "support"],                    // Sadece admin ve support görsün
+  //   "hasActiveSubscription": true,                    // Sadece premium üyeler
+  //   "printNestConfirmed": false,                      // PrintNest onay bekleyenler
+  //   "hasEtsyStore": false,                            // Mağaza URL'si girmeyenler
+  //   "excludeRoles": ["admin"]                         // Adminler hariç herkese
+  // }
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
   

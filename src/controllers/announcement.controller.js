@@ -3,11 +3,12 @@ const { successResponse, errorResponse } = require('../utils/helpers');
 
 class AnnouncementController {
   // @route   GET /api/announcements/active
-  // @desc    Get active announcements (public - kullanıcılar için)
+  // @desc    Get active announcements (kullanıcıya özel - hedef kitle filtreli)
   // @access  Private
   async getActiveAnnouncements(req, res, next) {
     try {
-      const announcements = await announcementService.getActiveAnnouncements();
+      // Kullanıcı bilgisini service'e gönder (hedef kitle filtrelemesi için)
+      const announcements = await announcementService.getActiveAnnouncements(req.user);
       return successResponse(res, { announcements }, 'Aktif bildirimler getirildi');
     } catch (error) {
       next(error);
@@ -51,19 +52,22 @@ class AnnouncementController {
   // @access  Private (Admin or Support)
   async createAnnouncement(req, res, next) {
     try {
-      const { title, message, type, startDate, endDate, isActive } = req.body;
+      const { title, message, type, startDate, endDate, isActive, targetAudience } = req.body;
 
       // Validasyon
       if (!title || !message || !startDate || !endDate) {
         return errorResponse(res, 'Başlık, mesaj, başlangıç ve bitiş tarihi gereklidir', 400);
       }
 
-      const data = { title, message, type, startDate, endDate, isActive };
+      const data = { title, message, type, startDate, endDate, isActive, targetAudience };
       const announcement = await announcementService.createAnnouncement(data, req.user.id);
 
       return successResponse(res, { announcement }, 'Bildirim oluşturuldu', 201);
     } catch (error) {
       if (error.message === 'Bitiş tarihi başlangıç tarihinden sonra olmalıdır') {
+        return errorResponse(res, error.message, 400);
+      }
+      if (error.message === 'targetAudience bir JSON objesi olmalıdır') {
         return errorResponse(res, error.message, 400);
       }
       next(error);
@@ -76,9 +80,9 @@ class AnnouncementController {
   async updateAnnouncement(req, res, next) {
     try {
       const id = parseInt(req.params.id);
-      const { title, message, type, startDate, endDate, isActive } = req.body;
+      const { title, message, type, startDate, endDate, isActive, targetAudience } = req.body;
 
-      const data = { title, message, type, startDate, endDate, isActive };
+      const data = { title, message, type, startDate, endDate, isActive, targetAudience };
       const announcement = await announcementService.updateAnnouncement(id, data);
 
       return successResponse(res, { announcement }, 'Bildirim güncellendi');
@@ -87,6 +91,9 @@ class AnnouncementController {
         return errorResponse(res, error.message, 404);
       }
       if (error.message === 'Bitiş tarihi başlangıç tarihinden sonra olmalıdır') {
+        return errorResponse(res, error.message, 400);
+      }
+      if (error.message === 'targetAudience bir JSON objesi olmalıdır') {
         return errorResponse(res, error.message, 400);
       }
       next(error);
