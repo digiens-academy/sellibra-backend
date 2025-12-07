@@ -58,16 +58,20 @@ class AdminController {
 
   // @route   DELETE /api/admin/users/:id
   // @desc    Delete user
-  // @access  Private (Admin only)
+  // @access  Private (Admin and Support)
   async deleteUser(req, res, next) {
     try {
       const userId = parseInt(req.params.id);
+      const deletingUserRole = req.user.role;
 
-      await adminService.deleteUser(userId);
+      await adminService.deleteUser(userId, deletingUserRole);
 
       return successResponse(res, null, 'Kullanıcı silindi');
     } catch (error) {
       if (error.message === 'Super admin kullanıcısı silinemez') {
+        return errorResponse(res, error.message, 403);
+      }
+      if (error.message === 'Support rolü admin kullanıcılarını silemez') {
         return errorResponse(res, error.message, 403);
       }
       if (error.message === 'Kullanıcı bulunamadı') {
