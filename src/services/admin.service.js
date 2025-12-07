@@ -108,7 +108,7 @@ class AdminService {
   }
 
   // Delete user
-  async deleteUser(userId) {
+  async deleteUser(userId, deletingUserRole = 'admin') {
     try {
       // Check if user is super admin
       const user = await prisma.user.findUnique({
@@ -123,11 +123,16 @@ class AdminService {
         throw new Error('Super admin kullanıcısı silinemez');
       }
 
+      // Support rolü admin kullanıcılarını silemez
+      if (deletingUserRole === 'support' && user.role === 'admin') {
+        throw new Error('Support rolü admin kullanıcılarını silemez');
+      }
+
       await prisma.user.delete({
         where: { id: userId },
       });
 
-      logger.info(`User ${userId} deleted`);
+      logger.info(`User ${userId} deleted by ${deletingUserRole}`);
       return { success: true };
     } catch (error) {
       logger.error('Delete user error:', error);

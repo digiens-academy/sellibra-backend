@@ -21,7 +21,9 @@ router.put('/users/:id/confirm-printnest', protect, adminOnly, validators.userId
 router.put('/users/:id/role', protect, adminOnly, validators.userId, adminController.updateUserRole);
 router.put('/users/:id/tokens', protect, adminOnly, validators.userId, adminController.updateUserTokens);
 router.post('/users/:id/reset-tokens', protect, adminOnly, validators.userId, adminController.resetUserTokens);
-router.delete('/users/:id', protect, adminOnly, validators.userId, adminController.deleteUser);
+
+// Delete user - accessible by both admin and support (support cannot delete admins)
+router.delete('/users/:id', protect, adminOrSupport, validators.userId, adminController.deleteUser);
 
 // Google Sheets sync - admin only
 router.post('/sync-to-sheets', protect, adminOnly, adminController.syncToSheets);
