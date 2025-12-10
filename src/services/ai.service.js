@@ -238,20 +238,21 @@ Etsy tag kuralları:
 - Maksimum 13 tag kullanabilirsin
 - Her tag maksimum 20 karakter olmalı
 - Küçük harf kullan (Etsy otomatik küçültür)
-- Çok kelimeli taglar kullanabilirsin (örn: "vintage tişört")
+- Çok kelimeli taglar kullanabilirsin (örn: "vintage shirt")
 - Tekil ve çoğul formları ayrı taglar olarak kullan
 - Uzun kuyruklu (long-tail) anahtar kelimeler ekle
 - Geniş ve dar anahtar kelimeleri dengele
-- Türkçe karakterler kullanılabilir
+- ÖNEMLI: Tüm taglar SADECE İNGİLİZCE olmalı (Etsy global pazardır)
+- Türkçe karakterler kullanma (ö, ü, ş, ı, ğ, ç vb.)
 
 Tag stratejisi:
-1. Ana ürün kelimesi (örn: tişört)
+1. Ana ürün kelimesi (örn: tshirt, shirt)
 2. Stil kelimesi (örn: vintage, modern)
-3. Hedef kitle (örn: kadın, erkek)
-4. Renk
-5. Malzeme
-6. Kullanım alanı
-7. Kompozit taglar (örn: "kadın tişört", "vintage stil")
+3. Hedef kitle (örn: women, men, unisex)
+4. Renk (İngilizce: black, white, blue vb.)
+5. Malzeme (İngilizce: cotton, polyester vb.)
+6. Kullanım alanı (İngilizce: casual, sport vb.)
+7. Kompozit taglar (örn: "womens tshirt", "vintage style")
 8. Nişe özel taglar`;
 
       let userPrompt = `Şu ürün için Etsy tagları oluştur:
@@ -267,6 +268,7 @@ ${occasion ? `Kullanım: ${occasion}` : ''}
 ${theme ? `Tema: ${theme}` : ''}
 
 13 adet SEO-optimized tag oluştur. Her tag maksimum 20 karakter olmalı.
+ÖNEMLİ: Tüm taglar SADECE İNGİLİZCE olmalı. Türkçe bilgileri İngilizce'ye çevir.
 Sadece tagleri yaz, her satıra bir tag, numara veya işaret kullanma.`;
 
       const response = await axios.post(

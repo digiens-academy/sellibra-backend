@@ -53,6 +53,75 @@ class AnnouncementService {
     return true;
   }
 
+  // Hedef kitleye uyan kullanıcı sayısını hesapla
+  async _countRecipients(targetAudience) {
+    try {
+      // Eğer targetAudience null ise herkese gösterilecek
+      if (!targetAudience) {
+        return await prisma.user.count();
+      }
+
+      // Filtreleme koşullarını oluştur
+      const whereConditions = {};
+
+      // Rol filtresi
+      if (targetAudience.roles && targetAudience.roles.length > 0) {
+        whereConditions.role = { in: targetAudience.roles };
+      }
+
+      // Premium üyelik filtresi
+      if (targetAudience.hasActiveSubscription !== undefined) {
+        whereConditions.hasActiveSubscription = targetAudience.hasActiveSubscription;
+      }
+
+      // PrintNest onay filtresi
+      if (targetAudience.printNestConfirmed !== undefined) {
+        whereConditions.printNestConfirmed = targetAudience.printNestConfirmed;
+      }
+
+      // Etsy mağaza filtresi
+      if (targetAudience.hasEtsyStore !== undefined) {
+        if (targetAudience.hasEtsyStore === true) {
+          // En az 1 mağazası olanlar VEYA etsyStoreUrl dolu olanlar
+          const usersWithStore = await prisma.user.count({
+            where: {
+              ...whereConditions,
+              OR: [
+                { etsyStores: { some: {} } },  // En az 1 etsy store kaydı var
+                { 
+                  AND: [
+                    { etsyStoreUrl: { not: null } },
+                    { etsyStoreUrl: { not: '' } }
+                  ]
+                }
+              ]
+            }
+          });
+          return usersWithStore;
+        } else {
+          // Hiç mağazası olmayanlar VE etsyStoreUrl boş olanlar
+          const usersWithoutStore = await prisma.user.count({
+            where: {
+              ...whereConditions,
+              etsyStores: { none: {} },      // Hiç etsy store kaydı yok
+              OR: [
+                { etsyStoreUrl: null },      // null
+                { etsyStoreUrl: '' }         // veya boş string
+              ]
+            }
+          });
+          return usersWithoutStore;
+        }
+      }
+
+      // Normal filtreleme (etsy store hariç)
+      return await prisma.user.count({ where: whereConditions });
+    } catch (error) {
+      logger.error('Count recipients error:', error);
+      return 0; // Hata durumunda 0 döndür
+    }
+  }
+
   // Aktif bildirimleri getir (kullanıcıya özel - hedef kitle filtreli)
   async getActiveAnnouncements(user) {
     try {
@@ -117,8 +186,19 @@ class AnnouncementService {
         prisma.announcement.count()
       ]);
 
+      // Her bildirim için hedef kitle sayısını hesapla
+      const announcementsWithCount = await Promise.all(
+        announcements.map(async (announcement) => {
+          const recipientCount = await this._countRecipients(announcement.targetAudience);
+          return {
+            ...announcement,
+            recipientCount  // Yeni alan ekleniyor
+          };
+        })
+      );
+
       return {
-        announcements,
+        announcements: announcementsWithCount,
         pagination: {
           currentPage: page,
           totalPages: Math.ceil(total / limit),
