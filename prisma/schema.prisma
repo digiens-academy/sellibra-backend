@@ -81,17 +81,27 @@ model GoogleSheetsSyncLog {
 
 // Etsy Stores table
 model EtsyStore {
-  id          Int      @id @default(autoincrement())
-  userId      Int      @map("user_id")
-  storeUrl    String   @map("store_url") @db.Text
-  storeName   String?  @map("store_name")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id               Int       @id @default(autoincrement())
+  userId           Int       @map("user_id")
+  storeUrl         String    @map("store_url") @db.Text
+  storeName        String?   @map("store_name")
+  
+  // OAuth Fields
+  shopId           String?   @map("shop_id") // Etsy shop ID
+  accessToken      String?   @map("access_token") @db.Text
+  refreshToken     String?   @map("refresh_token") @db.Text
+  tokenExpiresAt   DateTime? @map("token_expires_at")
+  scopes           String[]  @default([]) // İzin verilen yetkiler
+  isConnected      Boolean   @default(false) @map("is_connected") // OAuth bağlantısı aktif mi?
+  
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([shopId])
   @@map("etsy_stores")
 }
 

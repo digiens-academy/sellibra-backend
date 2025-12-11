@@ -338,35 +338,37 @@ Sadece tagleri yaz, her satıra bir tag, numara veya işaret kullanma.`;
       logger.info(`Etsy başlığı oluşturuluyor: ${productName}`);
 
       // SEO odaklı prompt hazırla
-      const systemPrompt = `Sen bir Etsy SEO uzmanısın. Görevin, Etsy'de üst sıralarda çıkacak, maksimum etkili ürün başlıkları oluşturmak.
+      const systemPrompt = `You are an Etsy SEO expert. Your task is to create maximum effective product titles that will rank high in Etsy search results.
 
-Etsy başlık kuralları:
-- Maksimum 140 karakter
-- En önemli anahtar kelimeler başta olmalı
-- Aşırı tekrar yapmadan anahtar kelimeleri kullan
-- Virgül veya | ile ayırarak okunabilir yap
-- Özel karakterlerden kaçın (Etsy kuralları)
-- Her kelime değerli olmalı - gereksiz kelimeler kullanma
-- Türkçe karakterler kullanılabilir
+Etsy title rules:
+- Maximum 140 characters
+- Most important keywords should be at the beginning
+- Use keywords naturally without excessive repetition
+- Use commas or | to make it readable
+- Avoid special characters (Etsy rules)
+- Every word should be valuable - don't use unnecessary words
+- IMPORTANT: All titles MUST be in ENGLISH ONLY (Etsy is a global marketplace)
+- Do not use Turkish characters (ö, ü, ş, ı, ğ, ç, etc.)
 
-Başlık formatı örnekleri:
-- "Vintage Çiçek Desenli Kadın Tişört | %100 Pamuk | Rahat Kesim"
-- "Minimalist Tipografi Erkek Tişört - Siyah Beyaz - Unisex"
-- "Boho Tarzı Oversize Tişört | Kadın | Yaz Koleksiyonu"`;
+Title format examples:
+- "Vintage Floral Women's T-Shirt | 100% Cotton | Comfortable Fit"
+- "Minimalist Typography Men's T-Shirt - Black White - Unisex"
+- "Boho Style Oversized T-Shirt | Women | Summer Collection"`;
 
-      let userPrompt = `Şu ürün için Etsy başlığı oluştur:
+      let userPrompt = `Create Etsy titles for this product:
 
-Ürün: ${productName}
-Tip: ${productType}
-${keywords.length > 0 ? `Anahtar Kelimeler: ${keywords.join(', ')}` : ''}
-${targetAudience ? `Hedef: ${targetAudience}` : ''}
-${style ? `Stil: ${style}` : ''}
-${color ? `Renk: ${color}` : ''}
-${size ? `Beden: ${size}` : ''}
-${occasion ? `Kullanım: ${occasion}` : ''}
+Product: ${productName}
+Type: ${productType}
+${keywords.length > 0 ? `Keywords: ${keywords.join(', ')}` : ''}
+${targetAudience ? `Target: ${targetAudience}` : ''}
+${style ? `Style: ${style}` : ''}
+${color ? `Color: ${color}` : ''}
+${size ? `Size: ${size}` : ''}
+${occasion ? `Occasion: ${occasion}` : ''}
 
-5 farklı başlık alternatifi oluştur. Her biri 140 karakter limiti içinde, SEO-optimized olmalı.
-Sadece başlıkları yaz, numaralandır (1. 2. 3. vb.)`;
+Create 5 different title alternatives. Each should be within 140 character limit and SEO-optimized.
+IMPORTANT: All titles MUST be in ENGLISH. Translate any Turkish information to English.
+Write only the titles, numbered (1. 2. 3. etc.)`;
 
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
@@ -437,30 +439,32 @@ Sadece başlıkları yaz, numaralandır (1. 2. 3. vb.)`;
       logger.info(`Etsy açıklaması oluşturuluyor: ${productName}`);
 
       // SEO odaklı prompt hazırla
-      const systemPrompt = `Sen bir Etsy SEO uzmanısın. Görevin, tişört ve diğer tekstil ürünleri için Etsy'de üst sıralarda çıkacak, profesyonel ve çekici ürün açıklamaları oluşturmak. 
+      const systemPrompt = `You are an Etsy SEO expert. Your task is to create professional and compelling product descriptions for t-shirts and other textile products that will rank high in Etsy search results.
 
-Açıklamalar şu özelliklere sahip olmalı:
-- SEO açısından optimize edilmiş (önemli anahtar kelimeleri doğal bir şekilde kullan)
-- İlk 160 karakter meta açıklama olarak kullanılabilir nitelikte olmalı
-- Ürünün özelliklerini ve faydalarını vurgula
-- Hedef kitleye hitap eden dil kullan
-- Etsy'nin format kurallarına uygun
-- Duygusal bağ kuran ve satışı teşvik eden
-- Paragraflar ve madde işaretleri ile okunabilir
-- 200-300 kelime arası olmalı`;
+Descriptions should have these features:
+- SEO optimized (use important keywords naturally)
+- First 160 characters should work as meta description
+- Highlight product features and benefits
+- Use language that appeals to target audience
+- Follow Etsy's format rules
+- Create emotional connection and encourage sales
+- Readable with paragraphs and bullet points
+- Should be 200-300 words
+- IMPORTANT: All descriptions MUST be in ENGLISH ONLY (Etsy is a global marketplace)`;
 
-      let userPrompt = `Şu ürün için Etsy açıklaması oluştur:
+      let userPrompt = `Create an Etsy description for this product:
 
-Ürün Adı: ${productName}
-Ürün Tipi: ${productType}
-${keywords.length > 0 ? `Anahtar Kelimeler: ${keywords.join(', ')}` : ''}
-${targetAudience ? `Hedef Kitle: ${targetAudience}` : ''}
-${style ? `Stil: ${style}` : ''}
-${material ? `Malzeme: ${material}` : ''}
-${features.length > 0 ? `Özellikler: ${features.join(', ')}` : ''}
-Ton: ${tone === 'casual' ? 'Samimi ve arkadaşça' : tone === 'enthusiastic' ? 'Coşkulu ve heyecanlı' : 'Profesyonel'}
+Product Name: ${productName}
+Product Type: ${productType}
+${keywords.length > 0 ? `Keywords: ${keywords.join(', ')}` : ''}
+${targetAudience ? `Target Audience: ${targetAudience}` : ''}
+${style ? `Style: ${style}` : ''}
+${material ? `Material: ${material}` : ''}
+${features.length > 0 ? `Features: ${features.join(', ')}` : ''}
+Tone: ${tone === 'casual' ? 'Friendly and casual' : tone === 'enthusiastic' ? 'Enthusiastic and exciting' : 'Professional'}
 
-Türkçe olarak, Etsy'de üst sıralara çıkacak şekilde optimize edilmiş bir ürün açıklaması yaz.`;
+IMPORTANT: Write the description in ENGLISH. Translate any Turkish information to English.
+Create an SEO-optimized product description that will rank high on Etsy.`;
 
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
