@@ -1,0 +1,43 @@
+===========================================
+YENİ ENVIRONMENT VARIABLES - ETSY OAUTH
+===========================================
+
+Backend .env dosyanıza ekleyin:
+
+# Etsy API Configuration (OAuth)
+ETSY_CLIENT_ID=your_etsy_client_id_here
+ETSY_CLIENT_SECRET=your_etsy_client_secret_here
+ETSY_REDIRECT_URI=http://localhost:5000/api/etsy-oauth/callback
+ETSY_API_URL=https://api.etsy.com/v3
+
+# Encryption Key (32 characters for AES-256)
+# Aşağıdaki komutu çalıştırarak key oluşturun:
+# node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+ENCRYPTION_KEY=your-32-character-encryption-key-here
+
+===========================================
+NOTLAR:
+===========================================
+
+1. ETSY_CLIENT_ID ve ETSY_CLIENT_SECRET:
+   - Etsy Developer Portal'dan alınır
+   - https://www.etsy.com/developers/your-apps
+
+2. ETSY_REDIRECT_URI:
+   - Development: http://localhost:5000/api/etsy-oauth/callback
+   - Production: https://yourdomain.com/api/etsy-oauth/callback
+   - Etsy Dashboard'da kayıtlı URI ile TAM eşleşmeli
+
+3. ENCRYPTION_KEY:
+   - 32 karakter (256-bit)
+   - Random ve güvenli olmalı
+   - Production'da mutlaka değiştirin
+   - Aşağıdaki komut ile oluşturabilirsiniz:
+     node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+4. FRONTEND_URL:
+   - Zaten mevcut olmalı
+   - OAuth callback'ten sonra redirect için kullanılır
+
+===========================================
+
