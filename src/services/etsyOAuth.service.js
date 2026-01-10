@@ -368,6 +368,189 @@ class EtsyOAuthService {
       throw error;
     }
   }
+
+  /**
+   * Get shop receipts (transactions/sales)
+   * @param {string} shopId - Etsy shop ID
+   * @param {string} accessToken - Valid access token
+   * @param {Object} options - Query options (limit, offset, min_created, max_created)
+   * @returns {Object} - Receipts data from Etsy API
+   */
+  async getShopReceipts(shopId, accessToken, options = {}) {
+    try {
+      const {
+        limit = 100,
+        offset = 0,
+        min_created = null,
+        max_created = null,
+      } = options;
+
+      const params = new URLSearchParams({
+        limit: limit.toString(),
+        offset: offset.toString(),
+      });
+
+      if (min_created) params.append('min_created', Math.floor(min_created.getTime() / 1000));
+      if (max_created) params.append('max_created', Math.floor(max_created.getTime() / 1000));
+
+      logger.info(`🔍 Fetching receipts for shop ${shopId} (limit: ${limit}, offset: ${offset})`);
+
+      const response = await axios.get(
+        `${this.baseUrl}/application/shops/${shopId}/receipts?${params.toString()}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'x-api-key': `${this.clientId}:${this.clientSecret}`,
+          },
+        }
+      );
+
+      logger.info(`✅ Fetched ${response.data.results?.length || 0} receipts for shop ${shopId}`);
+      return response.data;
+    } catch (error) {
+      logger.error(`❌ Error fetching receipts for shop ${shopId}:`, {
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+      throw new Error('Satış verileri alınamadı');
+    }
+  }
+
+  /**
+   * Get shop listings (products)
+   * @param {string} shopId - Etsy shop ID
+   * @param {string} accessToken - Valid access token
+   * @param {Object} options - Query options (limit, offset, state)
+   * @returns {Object} - Listings data from Etsy API
+   */
+  async getShopListings(shopId, accessToken, options = {}) {
+    try {
+      const {
+        limit = 100,
+        offset = 0,
+        state = 'active', // 'active', 'inactive', 'draft', 'expired', etc.
+      } = options;
+
+      const params = new URLSearchParams({
+        limit: limit.toString(),
+        offset: offset.toString(),
+        state: state,
+      });
+
+      logger.info(`🔍 Fetching listings for shop ${shopId} (state: ${state}, limit: ${limit})`);
+
+      const response = await axios.get(
+        `${this.baseUrl}/application/shops/${shopId}/listings/${state}?${params.toString()}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'x-api-key': `${this.clientId}:${this.clientSecret}`,
+          },
+        }
+      );
+
+      logger.info(`✅ Fetched ${response.data.results?.length || 0} listings for shop ${shopId}`);
+      return response.data;
+    } catch (error) {
+      logger.error(`❌ Error fetching listings for shop ${shopId}:`, {
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+      throw new Error('Ürün listesi alınamadı');
+    }
+  }
+
+  /**
+   * Get listing by ID with detailed info
+   * @param {string} listingId - Etsy listing ID
+   * @param {string} accessToken - Valid access token
+   * @returns {Object} - Listing data from Etsy API
+   */
+  async getListingById(listingId, accessToken) {
+    try {
+      logger.info(`🔍 Fetching listing ${listingId}`);
+
+      const response = await axios.get(
+        `${this.baseUrl}/application/listings/${listingId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'x-api-key': `${this.clientId}:${this.clientSecret}`,
+          },
+        }
+      );
+
+      logger.info(`✅ Fetched listing ${listingId}`);
+      return response.data;
+    } catch (error) {
+      logger.error(`❌ Error fetching listing ${listingId}:`, {
+        message: error.message,
+        status: error.response?.status,
+      });
+      throw new Error('Ürün bilgisi alınamadı');
+    }
+  }
+
+  /**
+   * Get shop statistics (aggregated from receipts and listings)
+   * @param {string} shopId - Etsy shop ID
+   * @param {string} accessToken - Valid access token
+   * @returns {Object} - Aggregated shop statistics
+   */
+  async getShopStats(shopId, accessToken) {
+    try {
+      logger.info(`📊 Calculating shop stats for shop ${shopId}`);
+
+      // Fetch recent receipts (last 90 days)
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+      const receiptsData = await this.getShopReceipts(shopId, accessToken, {
+        limit: 100,
+        min_created: ninetyDaysAgo,
+      });
+
+      const receipts = receiptsData.results || [];
+      const count = receiptsData.count || 0;
+
+      // Calculate stats
+      let totalSales = count;
+      let totalRevenue = 0;
+      let totalItems = 0;
+
+      receipts.forEach((receipt) => {
+        // grandtotal is the total amount paid by buyer (including tax, shipping)
+        totalRevenue += parseFloat(receipt.grandtotal?.amount || 0);
+        totalItems += receipt.transactions?.length || 0;
+      });
+
+      const avgOrderValue = totalSales > 0 ? totalRevenue / totalSales : 0;
+
+      // Fetch active listings count
+      const listingsData = await this.getShopListings(shopId, accessToken, {
+        limit: 1, // Just to get count
+        state: 'active',
+      });
+
+      const activeListings = listingsData.count || 0;
+
+      const stats = {
+        totalSales,
+        totalRevenue: totalRevenue.toFixed(2),
+        avgOrderValue: avgOrderValue.toFixed(2),
+        activeListings,
+        period: '90_days',
+      };
+
+      logger.info(`✅ Shop stats calculated for shop ${shopId}:`, stats);
+      return stats;
+    } catch (error) {
+      logger.error(`❌ Error calculating shop stats for shop ${shopId}:`, error.message);
+      throw new Error('Mağaza istatistikleri hesaplanamadı');
+    }
+  }
 }
 
 module.exports = new EtsyOAuthService();

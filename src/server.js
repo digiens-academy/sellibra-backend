@@ -19,6 +19,10 @@ initializeCleanupJob();
 const { initializeSheetSyncJob } = require('./jobs/syncSheetToDB');
 initializeSheetSyncJob();
 
+// Initialize Etsy Analytics sync cron job (günde 1 kez - saat 02:00)
+const { initializeAnalyticsSyncJob } = require('./jobs/syncEtsyAnalytics');
+initializeAnalyticsSyncJob();
+
 // Initialize AI workers (queue processing)
 require('./workers/ai.worker');
 // Initialize Google Sheets sync worker
@@ -174,6 +178,7 @@ app.use('/api/admin', require('./routes/admin.routes'));
 app.use('/api/ai', require('./routes/ai.routes'));
 app.use('/api/etsy-stores', require('./routes/etsyStore.routes'));
 app.use('/api/etsy-oauth', require('./routes/etsyOAuth.routes'));
+app.use('/api/etsy-analytics', require('./routes/etsyAnalytics.routes'));
 app.use('/api/announcements', require('./routes/announcement.routes'));
 
 // 404 handler

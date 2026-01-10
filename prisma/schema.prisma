@@ -98,7 +98,10 @@ model EtsyStore {
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
   // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user             User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analytics        EtsyAnalytics?
+  listings         EtsyListing[]
+  salesSummaries   EtsySalesSummary[]
 
   @@index([userId])
   @@index([shopId])
@@ -144,3 +147,147 @@ model Announcement {
   @@map("announcements")
 }
 
+// Etsy Analytics Cache table
+// Stores aggregated shop-level metrics for quick dashboard access
+model EtsyAnalytics {
+  id                  Int       @id @default(autoincrement())
+  storeId             Int       @unique @map("store_id")
+  shopId              String    @map("shop_id")
+  
+  // Sales metrics
+  totalSales          Int       @default(0) @map("total_sales") // Lifetime total sales count
+  totalRevenue        Decimal   @default(0) @map("total_revenue") @db.Decimal(12, 2) // Lifetime revenue in USD
+  todaySales          Int       @default(0) @map("today_sales")
+  todayRevenue        Decimal   @default(0) @map("today_revenue") @db.Decimal(10, 2)
+  weekSales           Int       @default(0) @map("week_sales")
+  weekRevenue         Decimal   @default(0) @map("week_revenue") @db.Decimal(10, 2)
+  monthSales          Int       @default(0) @map("month_sales")
+  monthRevenue        Decimal   @default(0) @map("month_revenue") @db.Decimal(10, 2)
+  
+  // Shop metrics
+  totalViews          Int       @default(0) @map("total_views")
+  totalFavorites      Int       @default(0) @map("total_favorites")
+  activeListings      Int       @default(0) @map("active_listings")
+  conversionRate      Decimal?  @map("conversion_rate") @db.Decimal(5, 2) // Percentage
+  avgOrderValue       Decimal?  @map("avg_order_value") @db.Decimal(10, 2)
+  
+  // Sync metadata
+  lastSyncAt          DateTime  @map("last_sync_at") @default(now())
+  syncStatus          String    @default("success") @map("sync_status") // "success", "failed", "pending"
+  syncErrorMessage    String?   @map("sync_error_message") @db.Text
+  
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  store               EtsyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  
+  @@index([shopId])
+  @@index([lastSyncAt])
+  @@map("etsy_analytics")
+}
+
+// Etsy Listings table
+// Stores individual product/listing data for detailed analysis
+model EtsyListing {
+  id                  Int       @id @default(autoincrement())
+  storeId             Int       @map("store_id")
+  listingId           String    @map("listing_id") // Etsy's listing ID
+  
+  // Listing details
+  title               String
+  description         String?   @db.Text
+  price               Decimal   @map("price") @db.Decimal(10, 2)
+  currencyCode        String    @default("USD") @map("currency_code")
+  quantity            Int       @default(0)
+  state               String    @default("active") // "active", "inactive", "draft", "sold_out"
+  url                 String?   @db.Text
+  
+  // Performance metrics
+  views               Int       @default(0)
+  favorites           Int       @default(0) @map("favorites")
+  numFavorers         Int       @default(0) @map("num_favorers")
+  totalSales          Int       @default(0) @map("total_sales")
+  totalRevenue        Decimal   @default(0) @map("total_revenue") @db.Decimal(10, 2)
+  
+  // Images
+  mainImage           String?   @map("main_image") @db.Text
+  
+  // Timestamps
+  listingCreatedAt    DateTime? @map("listing_created_at")
+  lastFetchedAt       DateTime  @default(now()) @map("last_fetched_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  store               EtsyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  
+  @@unique([storeId, listingId])
+  @@index([storeId])
+  @@index([listingId])
+  @@index([state])
+  @@map("etsy_listings")
+}
+
+// Etsy Sales Summary table
+// Aggregated sales data by time period (daily/monthly)
+model EtsySalesSummary {
+  id                  Int       @id @default(autoincrement())
+  storeId             Int       @map("store_id")
+  shopId              String    @map("shop_id")
+  
+  // Time period
+  date                DateTime  @db.Date // Date for the period
+  periodType          String    @map("period_type") // "daily", "weekly", "monthly"
+  
+  // Sales data
+  salesCount          Int       @default(0) @map("sales_count")
+  revenue             Decimal   @default(0) @map("revenue") @db.Decimal(10, 2)
+  avgOrderValue       Decimal?  @map("avg_order_value") @db.Decimal(10, 2)
+  
+  // Top products (JSON array of {listingId, title, sales, revenue})
+  topProducts         Json?     @map("top_products")
+  
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  store               EtsyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  
+  @@unique([storeId, date, periodType])
+  @@index([storeId])
+  @@index([shopId])
+  @@index([date])
+  @@index([periodType])
+  @@map("etsy_sales_summaries")
+}
+
+// Product Pricing table
+// Default pricing for common products + user overrides
+model ProductPricing {
+  id                  Int       @id @default(autoincrement())
+  userId              Int?      @map("user_id") // null = default pricing (for all users)
+  
+  // Product details
+  productType         String    @map("product_type") // "Bella Canvas 3001", "Gildan 18000", etc.
+  size                String?   // "S", "M", "L", "XL", etc. (null = applies to all sizes)
+  baseColor           String?   @map("base_color") // "White", "Black", etc. (null = applies to all colors)
+  
+  // Costs (in USD)
+  baseCost            Decimal   @map("base_cost") @db.Decimal(10, 2) // Blank product cost
+  printCost           Decimal   @map("print_cost") @db.Decimal(10, 2) // Printing cost
+  shippingCost        Decimal?  @map("shipping_cost") @db.Decimal(10, 2) // Optional shipping cost
+  
+  // Metadata
+  isDefault           Boolean   @default(false) @map("is_default") // Is this a system default?
+  notes               String?   @db.Text
+  
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  
+  @@unique([userId, productType, size, baseColor])
+  @@index([userId])
+  @@index([productType])
+  @@index([isDefault])
+  @@map("product_pricing")
+}
