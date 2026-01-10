@@ -138,7 +138,7 @@ class EtsyOAuthService {
       const userResponse = await axios.get(`${this.baseUrl}/application/users/me`, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
-          'x-api-key': this.clientId,
+          'x-api-key': `${this.clientId}:${this.clientSecret}`,
         },
       });
 
@@ -150,7 +150,7 @@ class EtsyOAuthService {
         {
           headers: {
             Authorization: `Bearer ${accessToken}`,
-            'x-api-key': this.clientId,
+            'x-api-key': `${this.clientId}:${this.clientSecret}`,
           },
         }
       );
