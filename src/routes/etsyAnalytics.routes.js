@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const etsyAnalyticsController = require('../controllers/etsyAnalytics.controller');
-const { authenticate } = require('../middlewares/auth.middleware');
+const { protect } = require('../middlewares/auth.middleware');
 
 // All routes require authentication
-router.use(authenticate);
+router.use(protect);
 
 /**
  * @route   POST /api/etsy-analytics/:storeId/sync
