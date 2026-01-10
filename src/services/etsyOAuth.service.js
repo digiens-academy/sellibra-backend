@@ -143,6 +143,7 @@ class EtsyOAuthService {
       });
 
       const userId = userResponse.data.user_id;
+      logger.info(`🔍 Getting shops for user ID: ${userId}`);
 
       // Then get shop details
       const shopsResponse = await axios.get(
@@ -154,6 +155,8 @@ class EtsyOAuthService {
           },
         }
       );
+
+      logger.info(`📦 Etsy shops response:`, JSON.stringify(shopsResponse.data, null, 2));
 
       if (shopsResponse.data.results && shopsResponse.data.results.length > 0) {
         const shop = shopsResponse.data.results[0];
