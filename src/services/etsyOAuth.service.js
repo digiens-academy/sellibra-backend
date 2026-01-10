@@ -134,6 +134,8 @@ class EtsyOAuthService {
    */
   async getShopInfo(accessToken) {
     try {
+      logger.info(`🔐 Getting shop info with access token: ${accessToken.substring(0, 20)}...`);
+      
       // First, get the user's shop ID
       const userResponse = await axios.get(`${this.baseUrl}/application/users/me`, {
         headers: {
@@ -158,18 +160,24 @@ class EtsyOAuthService {
 
       logger.info(`📦 Etsy shops response:`, JSON.stringify(shopsResponse.data, null, 2));
 
-      if (shopsResponse.data.results && shopsResponse.data.results.length > 0) {
-        const shop = shopsResponse.data.results[0];
+      // Etsy API returns shop object directly, not in results array
+      if (shopsResponse.data && shopsResponse.data.shop_id) {
         return {
-          shopId: shop.shop_id.toString(),
-          shopName: shop.shop_name,
-          url: shop.url,
+          shopId: shopsResponse.data.shop_id.toString(),
+          shopName: shopsResponse.data.shop_name,
+          url: shopsResponse.data.url,
         };
       }
 
       throw new Error('Mağaza bulunamadı');
     } catch (error) {
-      logger.error('Error getting shop info:', error.response?.data || error.message);
+      logger.error('❌ Error getting shop info - Full error:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        headers: error.response?.headers
+      });
       throw new Error('Mağaza bilgileri alınamadı');
     }
   }
@@ -292,21 +300,32 @@ class EtsyOAuthService {
       // Token expired or about to expire, refresh it
       logger.info(`Token expired for store ${storeId}, refreshing...`);
       
-      const decryptedRefreshToken = this.decryptToken(store.refreshToken);
-      const newTokenData = await this.refreshAccessToken(decryptedRefreshToken);
-      
-      // Update tokens in database
-      const expiresAt = new Date(Date.now() + newTokenData.expires_in * 1000);
-      await prisma.etsyStore.update({
-        where: { id: storeId },
-        data: {
-          accessToken: this.encryptToken(newTokenData.access_token),
-          refreshToken: this.encryptToken(newTokenData.refresh_token),
-          tokenExpiresAt: expiresAt,
-        },
-      });
+      try {
+        const decryptedRefreshToken = this.decryptToken(store.refreshToken);
+        const newTokenData = await this.refreshAccessToken(decryptedRefreshToken);
+        
+        // Update tokens in database
+        const expiresAt = new Date(Date.now() + newTokenData.expires_in * 1000);
+        await prisma.etsyStore.update({
+          where: { id: storeId },
+          data: {
+            accessToken: this.encryptToken(newTokenData.access_token),
+            refreshToken: this.encryptToken(newTokenData.refresh_token),
+            tokenExpiresAt: expiresAt,
+          },
+        });
 
-      return newTokenData.access_token;
+        logger.info(`✅ Token refreshed successfully for store ${storeId}`);
+        return newTokenData.access_token;
+      } catch (error) {
+        // Token refresh failed - mark store as disconnected
+        logger.error(`❌ Token refresh failed for store ${storeId}:`, error.message);
+        await prisma.etsyStore.update({
+          where: { id: storeId },
+          data: { isConnected: false },
+        });
+        throw new Error('Token süresi doldu. Lütfen Etsy mağazanızı yeniden bağlayın.');
+      }
     }
 
     // Token still valid, decrypt and return
