@@ -370,6 +370,122 @@ class ProductPricingService {
       quantity,
     };
   }
+
+  /**
+   * Save product cost for a specific listing
+   * @param {number} userId - User ID
+   * @param {number} storeId - Store ID
+   * @param {string} listingId - Listing ID
+   * @param {Object} costs - Cost data
+   * @returns {Object} - Saved cost entry
+   */
+  async saveProductCostForListing(userId, storeId, listingId, costs) {
+    try {
+      // Verify store ownership
+      const store = await prisma.etsyStore.findFirst({
+        where: { id: storeId, userId },
+      });
+
+      if (!store) {
+        throw new Error('Mağaza bulunamadı veya yetkiniz yok');
+      }
+
+      // Get listing details
+      const listing = await prisma.etsyListing.findFirst({
+        where: { storeId, listingId },
+      });
+
+      if (!listing) {
+        throw new Error('Ürün bulunamadı');
+      }
+
+      const {
+        baseCost = 0,
+        printCost = 0,
+        shippingCost = 0,
+        otherCosts = 0,
+      } = costs;
+
+      const pricingData = {
+        userId,
+        productType: listingId, // Store listingId as productType
+        size: null,
+        baseColor: null,
+        baseCost: parseFloat(baseCost),
+        printCost: parseFloat(printCost),
+        shippingCost: parseFloat(shippingCost),
+        isDefault: false,
+        notes: `Costs for listing: ${listing.title}`,
+      };
+
+      const saved = await prisma.productPricing.upsert({
+        where: {
+          userId_productType_size_baseColor: {
+            userId,
+            productType: listingId,
+            size: null,
+            baseColor: null,
+          },
+        },
+        create: pricingData,
+        update: pricingData,
+      });
+
+      logger.info(`✅ Saved cost for listing ${listingId} (user ${userId})`);
+
+      return {
+        id: saved.id,
+        listingId: listingId,
+        baseCost: parseFloat(saved.baseCost),
+        printCost: parseFloat(saved.printCost),
+        shippingCost: parseFloat(saved.shippingCost),
+        totalCost:
+          parseFloat(saved.baseCost) +
+          parseFloat(saved.printCost) +
+          parseFloat(saved.shippingCost),
+      };
+    } catch (error) {
+      logger.error('❌ Error saving product cost for listing:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get product cost by listing ID
+   * @param {number} userId - User ID
+   * @param {string} listingId - Listing ID
+   * @returns {Object|null} - Cost data or null
+   */
+  async getProductCostByListing(userId, listingId) {
+    try {
+      const pricing = await prisma.productPricing.findFirst({
+        where: {
+          userId,
+          productType: listingId,
+        },
+      });
+
+      if (!pricing) {
+        return null;
+      }
+
+      return {
+        id: pricing.id,
+        listingId: listingId,
+        baseCost: parseFloat(pricing.baseCost),
+        printCost: parseFloat(pricing.printCost),
+        shippingCost: parseFloat(pricing.shippingCost),
+        totalCost:
+          parseFloat(pricing.baseCost) +
+          parseFloat(pricing.printCost) +
+          parseFloat(pricing.shippingCost),
+        notes: pricing.notes,
+      };
+    } catch (error) {
+      logger.error('❌ Error getting product cost by listing:', error.message);
+      throw error;
+    }
+  }
 }
 
 module.exports = new ProductPricingService();

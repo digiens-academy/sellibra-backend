@@ -76,4 +76,39 @@ router.post('/pricing/user', etsyAnalyticsController.saveUserPricing);
  */
 router.delete('/pricing/user/:pricingId', etsyAnalyticsController.deleteUserPricing);
 
+/**
+ * @route   GET /api/etsy-analytics/:storeId/profit-overview
+ * @desc    Get profit overview (daily, weekly, monthly, yearly, total)
+ * @access  Private
+ */
+router.get('/:storeId/profit-overview', etsyAnalyticsController.getProfitOverview);
+
+/**
+ * @route   GET /api/etsy-analytics/:storeId/profit-products
+ * @desc    Get profit breakdown per product
+ * @access  Private
+ */
+router.get('/:storeId/profit-products', etsyAnalyticsController.getProductProfitBreakdown);
+
+/**
+ * @route   GET /api/etsy-analytics/:storeId/profit-trend
+ * @desc    Get daily profit trend data
+ * @access  Private
+ */
+router.get('/:storeId/profit-trend', etsyAnalyticsController.getProfitTrend);
+
+/**
+ * @route   POST /api/etsy-analytics/:storeId/product-cost/:listingId
+ * @desc    Save product cost data
+ * @access  Private
+ */
+router.post('/:storeId/product-cost/:listingId', etsyAnalyticsController.saveProductCost);
+
+/**
+ * @route   GET /api/etsy-analytics/:storeId/product-cost/:listingId
+ * @desc    Get product cost data
+ * @access  Private
+ */
+router.get('/:storeId/product-cost/:listingId', etsyAnalyticsController.getProductCost);
+
 module.exports = router;

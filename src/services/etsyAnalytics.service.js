@@ -560,6 +560,342 @@ class EtsyAnalyticsService {
       throw error;
     }
   }
+
+  /**
+   * Calculate profit overview for time periods
+   * @param {number} userId - User ID
+   * @param {number} storeId - Store ID
+   * @returns {Object} - Profit overview (today, week, month, year, total)
+   */
+  async calculateProfitOverview(userId, storeId) {
+    try {
+      logger.info(`📊 Calculating profit overview for store ${storeId}`);
+
+      // Verify ownership
+      const store = await prisma.etsyStore.findFirst({
+        where: { id: storeId, userId },
+      });
+
+      if (!store) {
+        throw new Error('Mağaza bulunamadı');
+      }
+
+      // Get date ranges
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const yearStart = new Date(now.getFullYear(), 0, 1);
+
+      // Calculate profit for each period
+      const [today, week, month, year, total] = await Promise.all([
+        this.calculatePeriodProfit(userId, storeId, todayStart, now),
+        this.calculatePeriodProfit(userId, storeId, weekStart, now),
+        this.calculatePeriodProfit(userId, storeId, monthStart, now),
+        this.calculatePeriodProfit(userId, storeId, yearStart, now),
+        this.calculatePeriodProfit(userId, storeId, new Date(0), now), // All time
+      ]);
+
+      logger.info(`✅ Profit overview calculated for store ${storeId}`);
+      
+      return { today, week, month, year, total };
+    } catch (error) {
+      logger.error(`❌ Error calculating profit overview:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Calculate profit for a specific time period
+   * @param {number} userId - User ID
+   * @param {number} storeId - Store ID
+   * @param {Date} startDate - Start date
+   * @param {Date} endDate - End date
+   * @returns {Object} - Profit data
+   */
+  async calculatePeriodProfit(userId, storeId, startDate, endDate) {
+    try {
+      // Get sales summary for period
+      const salesData = await prisma.etsySalesSummary.findMany({
+        where: {
+          storeId,
+          date: { gte: startDate, lte: endDate },
+        },
+      });
+
+      let revenue = 0;
+      let salesCount = 0;
+
+      salesData.forEach((day) => {
+        revenue += parseFloat(day.revenue || 0);
+        salesCount += day.salesCount || 0;
+      });
+
+      // Get cost data (average across all products with costs)
+      const listings = await prisma.etsyListing.findMany({
+        where: { storeId },
+      });
+
+      const listingIds = listings.map((l) => l.listingId);
+      const costs = await prisma.productPricing.findMany({
+        where: {
+          userId,
+          productType: { in: listingIds },
+        },
+      });
+
+      // Calculate average cost per unit
+      let avgCostPerUnit = 0;
+      if (costs.length > 0) {
+        const totalCost = costs.reduce((sum, c) => {
+          return (
+            sum +
+            parseFloat(c.baseCost || 0) +
+            parseFloat(c.printCost || 0) +
+            parseFloat(c.shippingCost || 0)
+          );
+        }, 0);
+        avgCostPerUnit = totalCost / costs.length;
+      }
+
+      const productCosts = avgCostPerUnit * salesCount;
+
+      // Calculate Etsy fees
+      const avgPrice = salesCount > 0 ? revenue / salesCount : 0;
+      const listingFee = 0.2 * salesCount;
+      const transactionFee = revenue * 0.065;
+      const paymentFee = (avgPrice * 0.03 + 0.25) * salesCount;
+      const totalEtsyFees = listingFee + transactionFee + paymentFee;
+
+      // Net profit
+      const netProfit = revenue - productCosts - totalEtsyFees;
+      const profitMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0;
+
+      return {
+        revenue: parseFloat(revenue.toFixed(2)),
+        salesCount,
+        costs: parseFloat(productCosts.toFixed(2)),
+        etsyFees: parseFloat(totalEtsyFees.toFixed(2)),
+        netProfit: parseFloat(netProfit.toFixed(2)),
+        profitMargin: parseFloat(profitMargin.toFixed(2)),
+      };
+    } catch (error) {
+      logger.error(`❌ Error calculating period profit:`, error.message);
+      return {
+        revenue: 0,
+        salesCount: 0,
+        costs: 0,
+        etsyFees: 0,
+        netProfit: 0,
+        profitMargin: 0,
+      };
+    }
+  }
+
+  /**
+   * Calculate profit breakdown per product
+   * @param {number} userId - User ID
+   * @param {number} storeId - Store ID
+   * @returns {Array} - Products with profit data
+   */
+  async calculateProductProfitBreakdown(userId, storeId) {
+    try {
+      logger.info(`📊 Calculating product profit breakdown for store ${storeId}`);
+
+      // Verify ownership
+      const store = await prisma.etsyStore.findFirst({
+        where: { id: storeId, userId },
+      });
+
+      if (!store) {
+        throw new Error('Mağaza bulunamadı');
+      }
+
+      // Get all listings with sales data
+      const listings = await prisma.etsyListing.findMany({
+        where: { storeId },
+        orderBy: { totalRevenue: 'desc' },
+      });
+
+      // Get cost data
+      const listingIds = listings.map((l) => l.listingId);
+      const costs = await prisma.productPricing.findMany({
+        where: {
+          userId,
+          productType: { in: listingIds },
+        },
+      });
+
+      const costMap = new Map();
+      costs.forEach((c) => {
+        costMap.set(c.productType, {
+          baseCost: parseFloat(c.baseCost || 0),
+          printCost: parseFloat(c.printCost || 0),
+          shippingCost: parseFloat(c.shippingCost || 0),
+          total:
+            parseFloat(c.baseCost || 0) +
+            parseFloat(c.printCost || 0) +
+            parseFloat(c.shippingCost || 0),
+        });
+      });
+
+      // Calculate profit for each product
+      const productsWithProfit = listings.map((listing) => {
+        const price = parseFloat(listing.price);
+        const sales = listing.totalSales || 0;
+        const revenue = parseFloat(listing.totalRevenue || 0);
+
+        // Get cost data
+        const costData = costMap.get(listing.listingId);
+        const hasCostData = !!costData;
+        const unitCost = costData ? costData.total : 0;
+        const totalCost = unitCost * sales;
+
+        // Calculate Etsy fees per sale
+        const listingFee = 0.2;
+        const transactionFee = price * 0.065;
+        const paymentFee = price * 0.03 + 0.25;
+        const totalEtsyFeesPerSale = listingFee + transactionFee + paymentFee;
+        const totalEtsyFees = totalEtsyFeesPerSale * sales;
+
+        // Net profit
+        const netProfit = revenue - totalCost - totalEtsyFees;
+        const profitMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0;
+        const profitPerUnit = sales > 0 ? netProfit / sales : 0;
+
+        return {
+          listingId: listing.listingId,
+          title: listing.title,
+          mainImage: listing.mainImage,
+          price: price,
+          sales: sales,
+          revenue: revenue,
+          hasCostData: hasCostData,
+          costs: {
+            base: costData ? costData.baseCost : 0,
+            print: costData ? costData.printCost : 0,
+            shipping: costData ? costData.shippingCost : 0,
+            total: totalCost,
+          },
+          etsyFees: {
+            listing: parseFloat((listingFee * sales).toFixed(2)),
+            transaction: parseFloat((transactionFee * sales).toFixed(2)),
+            payment: parseFloat((paymentFee * sales).toFixed(2)),
+            total: parseFloat(totalEtsyFees.toFixed(2)),
+          },
+          netProfit: parseFloat(netProfit.toFixed(2)),
+          profitMargin: parseFloat(profitMargin.toFixed(2)),
+          profitPerUnit: parseFloat(profitPerUnit.toFixed(2)),
+        };
+      });
+
+      // Sort by profit (highest first)
+      productsWithProfit.sort((a, b) => b.netProfit - a.netProfit);
+
+      logger.info(
+        `✅ Product profit breakdown calculated for ${productsWithProfit.length} products`
+      );
+      return productsWithProfit;
+    } catch (error) {
+      logger.error(`❌ Error calculating product profit breakdown:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Calculate daily profit trend
+   * @param {number} userId - User ID
+   * @param {number} storeId - Store ID
+   * @param {number} days - Number of days to include
+   * @returns {Array} - Daily profit data
+   */
+  async calculateProfitTrend(userId, storeId, days = 30) {
+    try {
+      logger.info(`📊 Calculating profit trend for store ${storeId} (${days} days)`);
+
+      // Verify ownership
+      const store = await prisma.etsyStore.findFirst({
+        where: { id: storeId, userId },
+      });
+
+      if (!store) {
+        throw new Error('Mağaza bulunamadı');
+      }
+
+      // Get date range
+      const endDate = new Date();
+      const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000);
+
+      // Get daily sales data
+      const salesSummary = await prisma.etsySalesSummary.findMany({
+        where: {
+          storeId,
+          date: { gte: startDate, lte: endDate },
+        },
+        orderBy: { date: 'asc' },
+      });
+
+      // Get cost data (aggregate average)
+      const listings = await prisma.etsyListing.findMany({
+        where: { storeId },
+      });
+
+      const listingIds = listings.map((l) => l.listingId);
+      const costs = await prisma.productPricing.findMany({
+        where: {
+          userId,
+          productType: { in: listingIds },
+        },
+      });
+
+      let avgCostPerUnit = 0;
+      if (costs.length > 0) {
+        const totalCost = costs.reduce((sum, c) => {
+          return (
+            sum +
+            parseFloat(c.baseCost || 0) +
+            parseFloat(c.printCost || 0) +
+            parseFloat(c.shippingCost || 0)
+          );
+        }, 0);
+        avgCostPerUnit = totalCost / costs.length;
+      }
+
+      // Calculate profit for each day
+      const trendData = salesSummary.map((day) => {
+        const revenue = parseFloat(day.revenue || 0);
+        const salesCount = day.salesCount || 0;
+
+        // Estimate costs
+        const productCosts = avgCostPerUnit * salesCount;
+
+        // Estimate Etsy fees (use average from revenue)
+        const avgPrice = salesCount > 0 ? revenue / salesCount : 0;
+        const etsyFeesPerSale = 0.2 + avgPrice * 0.065 + (avgPrice * 0.03 + 0.25);
+        const totalEtsyFees = etsyFeesPerSale * salesCount;
+
+        // Net profit
+        const netProfit = revenue - productCosts - totalEtsyFees;
+        const profitMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0;
+
+        return {
+          date: day.date.toISOString().split('T')[0], // YYYY-MM-DD
+          salesCount: salesCount,
+          revenue: parseFloat(revenue.toFixed(2)),
+          costs: parseFloat(productCosts.toFixed(2)),
+          etsyFees: parseFloat(totalEtsyFees.toFixed(2)),
+          netProfit: parseFloat(netProfit.toFixed(2)),
+          profitMargin: parseFloat(profitMargin.toFixed(2)),
+        };
+      });
+
+      logger.info(`✅ Profit trend calculated for ${trendData.length} days`);
+      return trendData;
+    } catch (error) {
+      logger.error(`❌ Error calculating profit trend:`, error.message);
+      throw error;
+    }
+  }
 }
 
 module.exports = new EtsyAnalyticsService();

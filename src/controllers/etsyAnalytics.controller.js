@@ -241,3 +241,124 @@ exports.deleteUserPricing = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * Get profit overview
+ */
+exports.getProfitOverview = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { storeId } = req.params;
+
+    const overview = await etsyAnalyticsService.calculateProfitOverview(
+      userId,
+      parseInt(storeId)
+    );
+
+    res.json({
+      success: true,
+      data: overview,
+    });
+  } catch (error) {
+    logger.error('Get profit overview error:', error.message);
+    next(error);
+  }
+};
+
+/**
+ * Get product profit breakdown
+ */
+exports.getProductProfitBreakdown = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { storeId } = req.params;
+
+    const products = await etsyAnalyticsService.calculateProductProfitBreakdown(
+      userId,
+      parseInt(storeId)
+    );
+
+    res.json({
+      success: true,
+      data: products,
+    });
+  } catch (error) {
+    logger.error('Get product profit breakdown error:', error.message);
+    next(error);
+  }
+};
+
+/**
+ * Get profit trend
+ */
+exports.getProfitTrend = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { storeId } = req.params;
+    const { days = 30 } = req.query;
+
+    const trend = await etsyAnalyticsService.calculateProfitTrend(
+      userId,
+      parseInt(storeId),
+      parseInt(days)
+    );
+
+    res.json({
+      success: true,
+      data: trend,
+    });
+  } catch (error) {
+    logger.error('Get profit trend error:', error.message);
+    next(error);
+  }
+};
+
+/**
+ * Save product cost
+ */
+exports.saveProductCost = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { storeId, listingId } = req.params;
+    const costs = req.body;
+
+    const saved = await productPricingService.saveProductCostForListing(
+      userId,
+      parseInt(storeId),
+      listingId,
+      costs
+    );
+
+    res.json({
+      success: true,
+      data: saved,
+      message: 'Maliyet bilgisi kaydedildi',
+    });
+  } catch (error) {
+    logger.error('Save product cost error:', error.message);
+    next(error);
+  }
+};
+
+/**
+ * Get product cost
+ */
+exports.getProductCost = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { listingId } = req.params;
+
+    const cost = await productPricingService.getProductCostByListing(
+      userId,
+      listingId
+    );
+
+    res.json({
+      success: true,
+      data: cost,
+    });
+  } catch (error) {
+    logger.error('Get product cost error:', error.message);
+    next(error);
+  }
+};
